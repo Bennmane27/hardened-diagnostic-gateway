@@ -13,6 +13,7 @@
 
 #include "isotp.h"
 #include "uds.h"
+#include "ecu_data.h"
 
 int main(void)
 {
@@ -23,9 +24,17 @@ int main(void)
     struct can_frame rx_frame;
     struct can_frame tx_frame;
 
+    // Donnees simulees du calculateur (couche application).
+    ecu_data_t ecu_data;
+    ecu_data_init(&ecu_data);
+
     // Contexte du serveur UDS : porte la session courante.
     uds_context_t uds_ctx;
     uds_init(&uds_ctx);
+
+    // Le serveur UDS ne connait pas les donnees : on lui branche la
+    // source applicative. C'est la seule liaison entre les deux.
+    uds_set_did_provider(&uds_ctx, ecu_data_read_did, &ecu_data);
 
     // 1. Creer le socket CAN
     socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -77,6 +86,9 @@ int main(void)
         {
             continue;
         }
+
+        // Les grandeurs simulees avancent d'un pas a chaque requete.
+        ecu_data_tick(&ecu_data);
 
         printf("\nTrame recue\n");
         printf("ID : 0x%X\n", rx_frame.can_id);

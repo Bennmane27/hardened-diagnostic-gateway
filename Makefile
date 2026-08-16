@@ -10,14 +10,15 @@
 # struct ifreq (definie dans net/if.h sous __USE_MISC).
 
 CC      := gcc
-INCLUDES := -Isrc/isotp -Isrc/uds
+INCLUDES := -Isrc/isotp -Isrc/uds -Isrc/ecu
 CFLAGS  := -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE $(INCLUDES)
 BUILD   := build
 
-ISOTP   := src/isotp/isotp.c
-UDS     := src/uds/uds.c
-CORE    := $(ISOTP) $(UDS)
-HEADERS := src/isotp/isotp.h src/uds/uds.h
+ISOTP    := src/isotp/isotp.c
+UDS      := src/uds/uds.c
+ECU_DATA := src/ecu/ecu_data.c
+CORE     := $(ISOTP) $(UDS) $(ECU_DATA)
+HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h
 
 # Les tests sont construits avec les sanitizers. Ils n'ont pas besoin de
 # _DEFAULT_SOURCE : ils ne touchent ni SocketCAN ni struct ifreq, ce qui
@@ -39,10 +40,15 @@ $(BUILD)/test_isotp: tests/test_isotp.c $(ISOTP) src/isotp/isotp.h | $(BUILD)
 $(BUILD)/test_uds: tests/test_uds.c $(UDS) src/uds/uds.h | $(BUILD)
 	$(CC) $(TEST_CFLAGS) tests/test_uds.c $(UDS) -o $@
 
-test: $(BUILD)/test_isotp $(BUILD)/test_uds
+$(BUILD)/test_ecu_data: tests/test_ecu_data.c $(ECU_DATA) $(UDS) $(HEADERS) | $(BUILD)
+	$(CC) $(TEST_CFLAGS) tests/test_ecu_data.c $(ECU_DATA) $(UDS) -o $@
+
+test: $(BUILD)/test_isotp $(BUILD)/test_uds $(BUILD)/test_ecu_data
 	./$(BUILD)/test_isotp
 	@echo ""
 	./$(BUILD)/test_uds
+	@echo ""
+	./$(BUILD)/test_ecu_data
 
 $(BUILD):
 	mkdir -p $(BUILD)
