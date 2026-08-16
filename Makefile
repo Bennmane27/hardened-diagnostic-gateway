@@ -10,29 +10,39 @@
 # struct ifreq (definie dans net/if.h sous __USE_MISC).
 
 CC      := gcc
-CFLAGS  := -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -Isrc/isotp
+INCLUDES := -Isrc/isotp -Isrc/uds
+CFLAGS  := -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE $(INCLUDES)
 BUILD   := build
 
 ISOTP   := src/isotp/isotp.c
+UDS     := src/uds/uds.c
+CORE    := $(ISOTP) $(UDS)
+HEADERS := src/isotp/isotp.h src/uds/uds.h
 
 # Les tests sont construits avec les sanitizers. Ils n'ont pas besoin de
 # _DEFAULT_SOURCE : ils ne touchent ni SocketCAN ni struct ifreq, ce qui
-# est precisement la preuve que la couche ISO-TP est independante de Linux.
-TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined -Isrc/isotp
+# est precisement la preuve que les couches protocole sont independantes
+# de Linux.
+TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
 all: $(BUILD)/ecu $(BUILD)/tester
 
-$(BUILD)/ecu: src/ecu/ecu.c $(ISOTP) src/isotp/isotp.h | $(BUILD)
-	$(CC) $(CFLAGS) src/ecu/ecu.c $(ISOTP) -o $@
+$(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) -o $@
 
-$(BUILD)/tester: src/tester/tester.c $(ISOTP) src/isotp/isotp.h | $(BUILD)
-	$(CC) $(CFLAGS) src/tester/tester.c $(ISOTP) -o $@
+$(BUILD)/tester: src/tester/tester.c $(CORE) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) src/tester/tester.c $(CORE) -o $@
 
 $(BUILD)/test_isotp: tests/test_isotp.c $(ISOTP) src/isotp/isotp.h | $(BUILD)
 	$(CC) $(TEST_CFLAGS) tests/test_isotp.c $(ISOTP) -o $@
 
-test: $(BUILD)/test_isotp
+$(BUILD)/test_uds: tests/test_uds.c $(UDS) src/uds/uds.h | $(BUILD)
+	$(CC) $(TEST_CFLAGS) tests/test_uds.c $(UDS) -o $@
+
+test: $(BUILD)/test_isotp $(BUILD)/test_uds
 	./$(BUILD)/test_isotp
+	@echo ""
+	./$(BUILD)/test_uds
 
 $(BUILD):
 	mkdir -p $(BUILD)
