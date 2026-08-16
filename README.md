@@ -53,6 +53,14 @@ Supported today:
 
 Like the ISO-TP layer, `uds.c` includes no system header and knows nothing about its transport.
 
+### Milestone 5 — ReadDataByIdentifier and virtual ECU data ✅
+
+`0x22` ReadDataByIdentifier, plus a simulated data model in `src/ecu/ecu_data.c`: engine RPM, vehicle speed, coolant temperature, battery voltage, software version, serial number and VIN.
+
+The UDS server holds no vehicle data. The application registers a provider callback (`uds_set_did_provider`), so the same server could serve an engine controller or a braking controller unchanged — and the unit tests inject a fake provider instead of the real ECU.
+
+This milestone is also where the Single Frame limit becomes visible on purpose. A VIN is 17 bytes; the response would need 20 bytes against the 7 available. Rather than truncate silently, the server answers `7F 22 14` — *responseTooLong*, the NRC ISO 14229 defines for exactly this case: a transport limit surfacing as a protocol error.
+
 ## Architecture
 
 ```text
@@ -82,14 +90,19 @@ Like the ISO-TP layer, `uds.c` includes no system header and knows nothing about
 ```text
 ├── Makefile
 ├── src/
-│   ├── isotp/{isotp.c, isotp.h}    ISO-TP transport, Single Frame
-│   ├── uds/{uds.c, uds.h}          UDS server, subset of ISO 14229-1
-│   ├── ecu/ecu.c                   virtual ECU (SocketCAN)
-│   └── tester/tester.c             diagnostic client (SocketCAN)
+│   ├── isotp/{isotp.c, isotp.h}       ISO-TP transport, Single Frame
+│   ├── uds/{uds.c, uds.h}             UDS server, subset of ISO 14229-1
+│   ├── ecu/
+│   │   ├── ecu.c                      virtual ECU (SocketCAN)
+│   │   └── ecu_data.{c,h}             simulated sensors and identifiers
+│   └── tester/tester.c                diagnostic client (SocketCAN)
 └── tests/
     ├── test_isotp.c
-    └── test_uds.c
+    ├── test_uds.c
+    └── test_ecu_data.c
 ```
+
+Only `ecu.c` and `tester.c` include Linux headers. Everything else is plain C over byte buffers.
 
 ## Setting up the virtual CAN bus
 
@@ -136,14 +149,48 @@ Terminal 3 (optional, independent observer):
 candump vcan0
 ```
 
-### Nominal exchange
+### What the tester does
 
-The tester requests an extended diagnostic session:
+It runs a diagnostic session end to end — open an extended session, read identification and live data, then deliberately hit three rejection paths:
 
 ```text
-vcan0  7E0  [8]  02 10 03 00 00 00 00 00
-vcan0  7E8  [8]  06 50 03 00 32 01 F4 00
+=== Tester de diagnostic ===
+
+[1] DiagnosticSessionControl -> Extended
+  TX 7E0 : 02 10 03 00 00 00 00 00
+  RX 7E8 : 06 50 03 00 32 01 F4 00
+  -> OK     session active : Extended Diagnostic Session
+            P2Server_max 50 ms, P2*Server_max 5000 ms
+
+[2] ReadDataByIdentifier -> version logicielle
+  TX 7E0 : 03 22 F1 89 00 00 00 00
+  RX 7E8 : 06 62 F1 89 01 04 02 00
+  -> OK     DID 0xF189 (ECU software version) = 01 04 02
+
+[4] ReadDataByIdentifier -> regime moteur
+  TX 7E0 : 03 22 01 00 00 00 00 00
+  RX 7E8 : 05 62 01 00 05 44 00 00
+  -> OK     DID 0x0100 (engine RPM) = 05 44  = 1348 tr/min
+
+[6] ReadDataByIdentifier -> tension batterie
+  RX 7E8 : 05 62 01 03 30 4E 00 00
+  -> OK     DID 0x0103 (battery voltage) = 30 4E  = 12.366 V
+
+[7] ReadDataByIdentifier -> VIN (17 octets : ne tient pas en Single Frame)
+  TX 7E0 : 03 22 F1 90 00 00 00 00
+  RX 7E8 : 03 7F 22 14 00 00 00 00
+  -> REFUS  service 0x22, NRC 0x14 (responseTooLong)
+
+[8] ReadDataByIdentifier -> identifiant inconnu
+  RX 7E8 : 03 7F 22 31 00 00 00 00
+  -> REFUS  service 0x22, NRC 0x31 (requestOutOfRange)
+
+[9] Service inexistant 0x99
+  RX 7E8 : 03 7F 99 11 00 00 00 00
+  -> REFUS  service 0x99, NRC 0x11 (serviceNotSupported)
 ```
+
+Reading the first exchange byte by byte:
 
 ```text
 02        ISO-TP Single Frame, 2 bytes of payload
@@ -155,10 +202,12 @@ vcan0  7E8  [8]  06 50 03 00 32 01 F4 00
 01 F4     P2*Server_max = 500 x 10 ms = 5000 ms
 ```
 
-### Rejection examples
+### Injecting malformed traffic by hand
 
 ```bash
-cansend vcan0 7E0#029900000000000000   # unknown service 0x99
+cansend vcan0 7E0#071003               # SF_DL says 7 bytes, DLC carries 2
+cansend vcan0 7E0#0F1003               # SF_DL = 15, impossible
+cansend vcan0 7E0#1008100300000000     # First Frame, not supported yet
 cansend vcan0 7E0#0210420000000000     # unknown sub-function
 cansend vcan0 7E0#0110000000000000     # 0x10 with no sub-function
 cansend vcan0 7E0#0210830000000000     # suppressPosRspMsgIndicationBit
@@ -167,10 +216,12 @@ cansend vcan0 7E0#0210830000000000     # suppressPosRspMsgIndicationBit
 Observed on the bus:
 
 ```text
-7E0  [8]  02 99 00 ...   ->   7E8  [8]  03 7F 99 11 ...   serviceNotSupported
-7E0  [8]  02 10 42 ...   ->   7E8  [8]  03 7F 10 12 ...   subFunctionNotSupported
-7E0  [8]  01 10 00 ...   ->   7E8  [8]  03 7F 10 13 ...   incorrectMessageLength
-7E0  [8]  02 10 83 ...   ->   (no response, as requested)
+7E0  [3]  07 10 03   ->   (no response, ISO-TP rejects: truncated frame)
+7E0  [3]  0F 10 03   ->   (no response, ISO-TP rejects: invalid length)
+7E0  [8]  10 08 ...  ->   (no response, ISO-TP rejects: unsupported type)
+7E0  [8]  02 10 42   ->   7E8  [8]  03 7F 10 12 ...   subFunctionNotSupported
+7E0  [8]  01 10 00   ->   7E8  [8]  03 7F 10 13 ...   incorrectMessageLength
+7E0  [8]  02 10 83   ->   (no response, as requested)
 ```
 
 ## Tests
@@ -183,9 +234,11 @@ Both suites are compiled with AddressSanitizer and UndefinedBehaviorSanitizer.
 
 **ISO-TP — 2480 checks.** The decoder is swept over all 256 possible PCI values crossed with all 9 possible frame lengths, and compared against a reference classifier written independently from the implementation so the oracle cannot inherit the same bug. Each frame is passed in a heap buffer allocated to the *exact* announced DLC, so any read past the end of the received data aborts the run under ASan. Also covers NULL arguments, encoder limits, padding and encode/decode round-trips.
 
-**UDS — 43 checks.** Focused on rejection paths: unknown services (all 255 non-implemented SIDs), invalid sub-functions, wrong request lengths, the suppress-positive-response bit, NULL arguments and undersized response buffers.
+**UDS — 64 checks.** Focused on rejection paths: every non-implemented SID, invalid sub-functions, wrong request lengths, the suppress-positive-response bit, NULL arguments and undersized response buffers. `0x22` is tested against an injected fake DID provider rather than the real ECU, which is what the callback decoupling buys.
 
-Current result: **2523 checks, 0 failures, no sanitizer findings.**
+**ECU data — 32 checks.** Determinism of the simulated values, big-endian encoding, sign preservation on negative temperatures, and a sweep of every identifier against every buffer capacity from 0 to 20 bytes to confirm nothing is ever written past the space provided.
+
+Current result: **2576 checks, 0 failures, no sanitizer findings.**
 
 ### Fault injection
 
@@ -203,9 +256,11 @@ Malformed frames injected on the live bus with `cansend` — truncated ISO-TP fr
 
 Stated explicitly rather than glossed over:
 
-- ISO-TP: Single Frame only. No First Frame, Consecutive Frame or Flow Control, so messages are capped at 7 bytes of payload.
-- No timers yet — none of `N_As`, `N_Ar`, `N_Bs`, `N_Br`, `N_Cs`, `N_Cr` are implemented.
-- UDS: one service (`0x10`). No session-based access rules, no SecurityAccess, no DTCs.
+- ISO-TP: Single Frame only. No First Frame, Consecutive Frame or Flow Control, so messages are capped at 7 bytes of payload — which is why the VIN cannot be read yet.
+- No ISO-TP timers — none of `N_As`, `N_Ar`, `N_Bs`, `N_Br`, `N_Cs`, `N_Cr` are implemented. The tester has a socket receive timeout, nothing more.
+- UDS: two services (`0x10`, `0x22`). `0x22` accepts a single identifier per request, not the list the standard allows.
+- Sessions are tracked but do not gate anything yet: no service is restricted to a session, and there is no session timeout or `TesterPresent`.
+- No SecurityAccess, no DTCs.
 - The ECU accepts requests on `0x7E0` without masking the CAN ID flag bits.
 - Classic CAN only; CAN FD is out of scope for now.
 - Not cross-validated against the Linux kernel ISO-TP implementation yet.
@@ -214,11 +269,13 @@ Stated explicitly rather than glossed over:
 
 | Next | Then | Later |
 |---|---|---|
-| Session-based access rules | ISO-TP First Frame + Flow Control | SecurityAccess (`0x27`) |
-| `0x3E` TesterPresent | Consecutive Frames + reassembly | Fault injector / fuzzer |
-| `0x22` ReadDataByIdentifier | Sequence-error handling | libFuzzer / AFL++ on the parsers |
-| Virtual ECU data model | Timeout abstraction | CI, static analysis, metrics |
-| DTC model | Cross-validation vs Linux ISO-TP | CAN FD, STM32 + FreeRTOS port |
+| ISO-TP First Frame + Flow Control | Session-based access rules | SecurityAccess (`0x27`) |
+| Consecutive Frames + reassembly | `0x3E` TesterPresent + session timeout | Fault injector / fuzzer |
+| Read the VIN in multiple frames | DTC model (`0x19`, `0x14`) | libFuzzer / AFL++ on the parsers |
+| Sequence-error handling | Timeout abstraction | CI, static analysis, metrics |
+| | Cross-validation vs Linux ISO-TP | CAN FD, STM32 + FreeRTOS port |
+
+Multi-frame moves to the front because `0x22` just proved the need for it concretely: the VIN is unreadable until ISO-TP can span several frames.
 
 ## A note on standards
 
