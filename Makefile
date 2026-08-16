@@ -2,9 +2,10 @@
 #
 # Build minimal, sans dependance externe.
 #
-#   make          -> construit build/ecu et build/tester
-#   make test     -> construit et lance les tests unitaires (ASan + UBSan)
-#   make clean    -> supprime build/
+#   make                     -> construit build/ecu et build/tester
+#   make test                -> tests unitaires (ASan + UBSan)
+#   make check-portability   -> verifie les invariants I1 et I2
+#   make clean               -> supprime build/
 #
 # _DEFAULT_SOURCE est requis : en -std=c11 strict, la glibc masque
 # struct ifreq (definie dans net/if.h sous __USE_MISC).
@@ -53,7 +54,35 @@ test: $(BUILD)/test_isotp $(BUILD)/test_uds $(BUILD)/test_ecu_data
 $(BUILD):
 	mkdir -p $(BUILD)
 
+# --------------------------------------------------------------------
+# Invariants d'architecture, verifies mecaniquement.
+#
+# I1 : les couches protocole n'incluent aucun header systeme.
+# I2 : aucune allocation dynamique dans src/.
+#
+# Ces deux regles sont ce qui rendra le portage microcontroleur
+# possible. Une verification automatique vaut mieux qu'une intention.
+# --------------------------------------------------------------------
+PORTABLE_SRC := src/isotp src/uds
+
+check-portability:
+	@echo "== I1 : aucun header systeme dans les couches protocole =="
+	@if grep -rn '#include[[:space:]]*<' $(PORTABLE_SRC) \
+	     | grep -vE '<(stdint|stddef|string)\.h>'; then \
+	    echo "ECHEC : header systeme interdit ci-dessus"; exit 1; \
+	 else echo "OK"; fi
+	@echo "== I2 : aucune allocation dynamique dans src/ =="
+	@if grep -rnw -e malloc -e calloc -e realloc -e free src/; then \
+	    echo "ECHEC : allocation dynamique ci-dessus"; exit 1; \
+	 else echo "OK"; fi
+	@echo "== I1bis : les couches protocole compilent hors contexte Linux =="
+	@$(CC) -Wall -Wextra -Werror -std=c11 -pedantic $(INCLUDES) \
+	    -c $(ISOTP) -o /dev/null
+	@$(CC) -Wall -Wextra -Werror -std=c11 -pedantic $(INCLUDES) \
+	    -c $(UDS) -o /dev/null
+	@echo "OK"
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test clean
+.PHONY: all test check-portability clean
