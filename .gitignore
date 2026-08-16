@@ -20,3 +20,7 @@ build/
 # Traces de capture CAN
 *.log
 *.pcap
+
+# Artefacts WebAssembly (construits par la CI Pages)
+web/ahdg.js
+web/ahdg.wasm

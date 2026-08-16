@@ -1,0 +1,54 @@
+name: Pages
+
+# Compile le vrai stack C vers WebAssembly avec l'image officielle
+# emscripten, puis publie web/ sur GitHub Pages. Le visiteur obtient une
+# URL ou tout tourne dans son navigateur, sans aucun environnement.
+#
+# A activer une fois : Settings -> Pages -> Source: GitHub Actions.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un seul deploiement a la fois ; on annule les builds Pages en attente.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Image officielle emscripten : emcc sans installation manuelle.
+      - name: Build WebAssembly
+        run: |
+          docker run --rm -v "$PWD":/src -w /src emscripten/emsdk:latest \
+            bash web/build.sh
+
+      - name: Verify artefacts
+        run: |
+          test -f web/ahdg.js
+          test -f web/ahdg.wasm
+          ls -la web/ahdg.js web/ahdg.wasm
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

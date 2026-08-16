@@ -272,6 +272,25 @@ state confusion, not a demonstrated privilege escalation, because defense-in-dep
 (the session check) masks the direct exploit in the current service set. Do not
 inflate a finding's severity.
 
+### D24 — The online lab is the real C compiled to WASM, never a JS rewrite
+
+`web/` compiles uds.c, isotp*.c, ecu_data.c and the adversarial explorer to
+WebAssembly (emscripten) and serves them on GitHub Pages, so anyone tests the
+stack from a URL with no environment. It runs the production code, not a
+reimplementation — a JS rewrite would be a second implementation that could
+silently disagree with the C, which is exactly the failure mode the project
+guards against everywhere else.
+
+The adversary is shared as one source: `fuzz/ahdg_explore_core.h` (header-only)
+is included by both the CLI (`fuzz/ahdg_explore.c`) and the WASM entry
+(`web/wasm/ahdg_wasm.c`), so the browser and the command line cannot diverge.
+The WASM entry lives in `web/`, outside `src/`, so its static return buffers do
+not touch invariant I2. The `.wasm`/`.js` are build artefacts (gitignored),
+produced by the Pages workflow, not committed.
+
+Enabling it is a one-time manual step the user must do: repo Settings -> Pages
+-> Source: GitHub Actions. The Makefile cannot do it.
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform

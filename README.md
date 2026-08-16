@@ -7,6 +7,18 @@ sequence or hostile.
 
 No ISO-TP or UDS library is used. Implementing those layers is the project.
 
+## ▶ Run it in your browser — no install
+
+**[bennmane27.github.io/hardened-diagnostic-gateway](https://bennmane27.github.io/hardened-diagnostic-gateway/)**
+
+The real C stack — ISO-TP, the UDS server, the virtual ECU, and the adversarial
+state-space explorer — is compiled to WebAssembly and runs entirely in the page.
+Send UDS requests and watch the session and security state change, decode ISO-TP
+frames, and launch the adversary against the real UDS server live. Nothing is
+installed and nothing is sent to a server: every byte is produced by the
+production code executing in your tab. Built and deployed by
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+
 ```
 14 733 unit checks · 2 000 000 fuzz cases · 12 994 183 ISO-TP frames
 Cross-validated against the Linux kernel ISO-TP stack

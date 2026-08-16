@@ -46,6 +46,7 @@ reproducible experiment.
 | M59 | One-command reproduction + CI gate on blocked-attack count | |
 | M60 | Prior-art review — hard gate on the novelty claim | |
 | M61 | Write-up: threat model, invariants, discovery, results | |
+| M62 | In-browser WASM lab: real stack + adversary, zero install | done |
 
 First experimental finding: [docs/findings/AHDG-0001.md](docs/findings/AHDG-0001.md)
 — a cross-layer state confusion in the real UDS server, discovered automatically,
