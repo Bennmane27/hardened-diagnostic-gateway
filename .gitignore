@@ -1,0 +1,22 @@
+# Sortie de compilation
+build/
+
+# Binaires compiles laisses a la racine (ancienne organisation)
+/ecu
+/tester
+
+# Objets et bibliotheques
+*.o
+*.a
+*.so
+*.d
+
+# Fichiers temporaires d'editeurs
+*.swp
+*.swo
+*~
+.vscode/
+
+# Traces de capture CAN
+*.log
+*.pcap
