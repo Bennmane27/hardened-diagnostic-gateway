@@ -205,6 +205,17 @@ and the triggering frame, so a violation is not just stopped but **explained**.
 
 ---
 
+## 4quater. The live gateway (M53 + M54)
+
+`src/gateway/gateway_main.c` is the in-line mediator: external bus (tester) on one
+side, trusted bus (ECU) on the other. It reassembles each request, asks the
+hardened policy (`gw_admit`) whether it may reach the ECU, and forwards only what
+is admitted; on a drop it returns the hardened negative response to the tester
+itself (recovery) while the ECU's bus never carries the frame. `make gwdemo`
+demonstrates it over vcan0/vcan1: an unauthorized ECUReset is dropped and is
+provably absent from the trusted-bus capture, while a legitimate unlock-then-reset
+passes intact. Enforcement before the ECU, on real (virtual) buses.
+
 ## 4ter. Benchmark result (S0/S1/S2)
 
 `bench/bench.c` puts three protections in front of the same permissive ECU on the

@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <signal.h>
 
@@ -59,6 +60,9 @@ static void print_statistics(void)
 
 int main(int argc, char **argv)
 {
+    const char *iface = getenv("HDG_IFACE");
+    if (iface == NULL) { iface = CAN_INTERFACE; }
+
     int verbose = 1;
 
     if ((argc > 1) && (argv[1][0] == '-') && (argv[1][1] == 'q'))
@@ -69,7 +73,7 @@ int main(int argc, char **argv)
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 
-    if (can_socket_open(&g_sock, CAN_INTERFACE, RX_TICK_MS) != 0)
+    if (can_socket_open(&g_sock, iface, RX_TICK_MS) != 0)
     {
         return 1;
     }
@@ -93,7 +97,7 @@ int main(int argc, char **argv)
     uds_seed_entropy(&g_uds, can_monotonic_ms());
 
     printf("=== ECU virtuel ===\n");
-    printf("Interface   : %s\n", CAN_INTERFACE);
+    printf("Interface   : %s\n", iface);
     printf("Requetes    : 0x%03X\n", CAN_ID_TESTER_TO_ECU);
     printf("Reponses    : 0x%03X\n", CAN_ID_ECU_TO_TESTER);
     printf("Session     : %s\n", uds_session_to_string(g_uds.session));

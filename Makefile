@@ -10,6 +10,7 @@
 #   make bench               -> banc de comparaison S0 / S1 / S2
 #   make demo                -> rejoue et reenregistre la demonstration
 #   make web                 -> console web sur http://127.0.0.1:8800
+#   make gwdemo              -> demo passerelle en ligne (vcan0 <-> vcan1)
 #   make setup               -> rappelle comment rendre vcan0 permanente
 #   make check-portability   -> verifie les invariants d architecture
 #   tests/interop/crossvalidate.sh -> validation croisee contre le noyau
@@ -38,7 +39,7 @@ HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
 # de Linux.
 TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
-all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli \
+all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli $(BUILD)/gateway \
      $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser $(BUILD)/ahdg_explore \
      $(BUILD)/ahdg_frames $(BUILD)/bench
 
@@ -50,6 +51,10 @@ $(BUILD)/tester: src/tester/tester.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 
 $(BUILD)/diagcli: src/tester/diagcli.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/tester/diagcli.c $(CORE) $(PLATFORM) -o $@
+
+$(BUILD)/gateway: src/gateway/gateway_main.c $(CORE) $(GATEWAY) $(PLATFORM) \
+                 $(HEADERS) src/gateway/gateway.h | $(BUILD)
+	$(CC) $(CFLAGS) src/gateway/gateway_main.c $(CORE) $(GATEWAY) $(PLATFORM) -o $@
 
 $(BUILD)/test_isotp: tests/test_isotp.c $(ISOTP) src/isotp/isotp.h | $(BUILD)
 	$(CC) $(TEST_CFLAGS) tests/test_isotp.c $(ISOTP) -o $@
@@ -131,6 +136,10 @@ demo: all
 web: all
 	tools/webdemo/server.py
 
+# Demonstration de la passerelle en ligne entre deux bus (vcan0 <-> vcan1).
+gwdemo: all
+	tools/demo/gateway_demo.sh
+
 # vcan0 disparait a chaque redemarrage de WSL. L'unite systemd installee
 # ici la recree automatiquement. Le make ne peut pas elever ses droits :
 # il affiche la commande a lancer.
@@ -198,4 +207,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz explore frames bench demo web setup check-portability clean
+.PHONY: all test fuzz explore frames bench demo web gwdemo setup check-portability clean

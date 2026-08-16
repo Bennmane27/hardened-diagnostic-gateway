@@ -488,12 +488,15 @@ static int execute(int argc, char **argv)
 
 int main(void)
 {
+    const char *iface = getenv("HDG_IFACE");
+    if (iface == NULL) { iface = CAN_INTERFACE; }
+
     char line[MAX_LINE];
     char *argv[32];
 
     g_interactive = isatty(STDIN_FILENO);
 
-    if (can_socket_open(&g_sock, CAN_INTERFACE, RX_TICK_MS) != 0)
+    if (can_socket_open(&g_sock, iface, RX_TICK_MS) != 0)
     {
         return 1;
     }
@@ -505,7 +508,7 @@ int main(void)
 
     printf("=== Client de diagnostic ===\n");
     printf("interface %s   requetes 0x%03X   reponses 0x%03X\n",
-           CAN_INTERFACE, CAN_ID_TESTER_TO_ECU, CAN_ID_ECU_TO_TESTER);
+           iface, CAN_ID_TESTER_TO_ECU, CAN_ID_ECU_TO_TESTER);
     printf("\"help\" pour la liste des commandes.\n");
 
     for (;;)

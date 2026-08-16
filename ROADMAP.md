@@ -37,8 +37,8 @@ reproducible experiment.
 | M50 | `invariants.h` — cross-layer invariant catalogue as code | done |
 | M51 | Gateway shadow state: passive ISO-TP + UDS tracking | **partial** — frame-level explorer reconstructs combined state (`fuzz/ahdg_frames.c`) |
 | M52 | Invariant engine: evaluate, verdict ALLOW / DROP / RECOVER | **partial** — gateway admits via the hardened policy (`src/gateway/gateway.c`) |
-| M53 | In-line CAN gateway, transparent on the nominal path | |
-| M54 | RECOVER: post-violation resynchronization, availability restored | |
+| M53 | In-line CAN gateway, transparent on the nominal path | **done** — `src/gateway/gateway_main.c`, two-bus mediation (`make gwdemo`) |
+| M54 | RECOVER: on DROP the tester still gets the hardened negative response, the ECU never sees the frame | **done** |
 | M55 | Adversarial state-space explorer + delta-debug minimizer | **partial** — UDS-level explorer (`fuzz/ahdg_explore.c`) live; found AHDG-0001 |
 | M56 | Frozen counterexample corpus + exact replay | |
 | M57 | Benchmark harness S0 / S1 / S2 | **done** — 83,895→0 unauthorized resets, availability 500/500, ~80 ns ([bench doc](docs/findings/BENCH-S0-S1-S2.md)) |

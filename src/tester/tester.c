@@ -9,6 +9,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -286,6 +287,9 @@ static void request(const char *label,
 
 int main(int argc, char **argv)
 {
+    const char *iface = getenv("HDG_IFACE");
+    if (iface == NULL) { iface = CAN_INTERFACE; }
+
     int verbose = 1;
 
     if ((argc > 1) && (argv[1][0] == '-') && (argv[1][1] == 'q'))
@@ -293,7 +297,7 @@ int main(int argc, char **argv)
         verbose = 0;
     }
 
-    if (can_socket_open(&g_sock, CAN_INTERFACE, RX_TICK_MS) != 0)
+    if (can_socket_open(&g_sock, iface, RX_TICK_MS) != 0)
     {
         return 1;
     }
@@ -304,7 +308,7 @@ int main(int argc, char **argv)
                    verbose);
 
     printf("=== Tester de diagnostic ===\n");
-    printf("Interface : %s\n", CAN_INTERFACE);
+    printf("Interface : %s\n", iface);
 
     /* --- Session par defaut --- */
     {

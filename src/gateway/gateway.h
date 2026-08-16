@@ -66,6 +66,20 @@ gw_verdict_t gw_admit(gw_t *gw, const uint8_t *request, uint16_t len,
                       uint32_t now_ms);
 
 /*
+ * Comme gw_admit, mais restitue aussi la reponse que la politique durcie
+ * produirait. Sur GW_DROP, resp contient la reponse negative a renvoyer
+ * telle quelle au testeur : la passerelle ne laisse jamais le testeur sans
+ * reponse (recovery), tout en n'exposant jamais l'ECU. Sur GW_ALLOW, resp
+ * est la reponse du fantome (ignoree : c'est celle du vrai ECU qui compte).
+ *
+ * resp_capacity doit valoir au moins UDS_MAX_RESPONSE_SIZE.
+ */
+gw_verdict_t gw_admit_ex(gw_t *gw, const uint8_t *request, uint16_t len,
+                         uint32_t now_ms,
+                         uint8_t *resp, uint16_t resp_capacity,
+                         uint16_t *resp_len);
+
+/*
  * Observe une reponse de l'ECU pour garder le fantome synchronise.
  *
  * Le cas essentiel : la graine de SecurityAccess. La passerelle doit

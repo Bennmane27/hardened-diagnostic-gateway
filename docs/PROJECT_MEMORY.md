@@ -322,6 +322,18 @@ without state), the gateway blocks all of them, and it blocks no legitimate flow
 realistic weaker ECU, not a strawman; the result is one attack class vs one
 baseline, stated as such - not a coverage claim. The STM32 latency is M58.
 
+### D28 — The live gateway mediates two buses; enforcement is before the ECU
+
+`src/gateway/gateway_main.c` sits between an external bus (tester) and a trusted
+bus (ECU), reassembling each request, running gw_admit, and forwarding to the ECU
+only what the hardened policy admits. On DROP it returns the hardened negative
+response to the tester itself (M54 recovery: the tester is never left hanging)
+while the ECU's bus never carries the frame. Demonstrated live over vcan0/vcan1
+(`make gwdemo`): an unauthorized ECUReset is dropped and is provably ABSENT from
+the trusted-bus candump, while the legitimate unlock-then-reset passes intact.
+gateway_main.c is the Linux app (like ecu.c); gateway.c stays portable. ECU,
+tester and diagcli now read HDG_IFACE so they can be placed on either bus.
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform

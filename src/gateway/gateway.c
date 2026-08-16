@@ -65,15 +65,18 @@ void gw_init(gw_t *gw)
     gw->last_nrc       = 0u;
 }
 
-gw_verdict_t gw_admit(gw_t *gw, const uint8_t *request, uint16_t len,
-                      uint32_t now_ms)
+gw_verdict_t gw_admit_ex(gw_t *gw, const uint8_t *request, uint16_t len,
+                         uint32_t now_ms,
+                         uint8_t *resp, uint16_t resp_capacity,
+                         uint16_t *resp_len)
 {
-    uint8_t resp[UDS_MAX_RESPONSE_SIZE];
     uint16_t rl = 0u;
     uds_result_t r;
 
-    if ((gw == NULL) || (request == NULL))
+    if ((gw == NULL) || (request == NULL) || (resp == NULL) ||
+        (resp_len == NULL) || (resp_capacity < UDS_MAX_RESPONSE_SIZE))
     {
+        if (resp_len != NULL) { *resp_len = 0u; }
         return GW_DROP;
     }
 
@@ -85,13 +88,15 @@ gw_verdict_t gw_admit(gw_t *gw, const uint8_t *request, uint16_t len,
      * politique durcie donnerait.
      */
     r = uds_handle_request(&gw->shadow, request, len, now_ms,
-                           resp, (uint16_t)sizeof(resp), &rl);
+                           resp, resp_capacity, &rl);
+    *resp_len = rl;
 
     /*
      * Refus d'ACCES : la politique durcie repond negativement pour une
      * raison de securite ou de session. Ce sont exactement les requetes
      * qu'un ECU permissif accepterait a tort et que la passerelle doit
-     * arreter.
+     * arreter. La reponse negative reste dans resp : la passerelle la
+     * renvoie au testeur (recovery) sans exposer l'ECU.
      */
     if ((r == UDS_OK) && (rl == UDS_NEGATIVE_RESPONSE_LEN) &&
         (resp[0] == UDS_NEGATIVE_RESPONSE_SID))
@@ -116,6 +121,15 @@ gw_verdict_t gw_admit(gw_t *gw, const uint8_t *request, uint16_t len,
 
     gw->stat_allowed++;
     return GW_ALLOW;
+}
+
+gw_verdict_t gw_admit(gw_t *gw, const uint8_t *request, uint16_t len,
+                      uint32_t now_ms)
+{
+    uint8_t resp[UDS_MAX_RESPONSE_SIZE];
+    uint16_t rl = 0u;
+    return gw_admit_ex(gw, request, len, now_ms,
+                       resp, (uint16_t)sizeof(resp), &rl);
 }
 
 void gw_observe_response(gw_t *gw, const uint8_t *response, uint16_t len)

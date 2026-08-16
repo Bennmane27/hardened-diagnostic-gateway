@@ -1,5 +1,5 @@
 [Unit]
-Description=Interface CAN virtuelle vcan0 (Hardened Diagnostic Gateway)
+Description=Interfaces CAN virtuelles vcan0/vcan1 (Hardened Diagnostic Gateway)
 Documentation=https://github.com/Bennmane27/hardened-diagnostic-gateway
 # L'interface doit exister avant que quoi que ce soit tente de s'y
 # attacher, donc avant la mise en place du reseau.
@@ -14,8 +14,8 @@ Type=oneshot
 # derriere lui. Sans cette ligne systemd le considererait comme arrete
 # des la fin du script et le relancerait a tort.
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/vcan-up vcan0
-ExecStop=/bin/sh -c '/sbin/ip link del vcan0 2>/dev/null || true'
+ExecStart=/bin/sh -c '/usr/local/sbin/vcan-up vcan0 && /usr/local/sbin/vcan-up vcan1'
+ExecStop=/bin/sh -c '/sbin/ip link del vcan0 2>/dev/null; /sbin/ip link del vcan1 2>/dev/null; true'
 
 [Install]
 WantedBy=multi-user.target
