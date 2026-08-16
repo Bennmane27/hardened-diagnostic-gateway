@@ -16,6 +16,13 @@ Cross-validated against the Linux kernel ISO-TP stack
 Every figure above was measured, with the commands that produced it, in
 [docs/results.md](docs/results.md).
 
+![Demonstration](docs/media/demo.svg)
+
+*The full run: tests, architecture invariants, a diagnostic session against the
+virtual ECU, fault injection, cross-validation against the kernel, and a fuzzing
+campaign. Reproduce it with `tools/demo/demo.sh`; replay the recording with
+`asciinema play docs/media/demo.cast`.*
+
 ---
 
 ## The problem
@@ -142,7 +149,33 @@ make
 Terminal 1: `./build/ecu` — Terminal 2: `./build/tester` — Terminal 3:
 `candump vcan0`
 
-A 19-step scenario runs. Three moments worth watching.
+Or drive it by hand:
+
+```
+$ ./build/diagcli
+
+[DEFAULT | LOCKED] > session extended
+  TX  10 03
+  RX  50 03 00 32 01 F4
+      OK     session EXTENDED
+
+[EXTENDED | LOCKED] > read vin
+  TX  22 F1 90
+  RX  62 F1 90 56 46 31 48 44 47 32 41 58 34 37 31 32 39 33 30 35
+      OK     DID F190  VIN
+             ... = "VF1HDG2AX47129305"
+
+[EXTENDED | LOCKED] > reset
+  RX  7F 11 33
+      REFUS  ECUReset -> NRC 0x33  securityAccessDenied
+```
+
+The prompt tracks the session and the security level, so the two preconditions
+guarding a sensitive command are visible at all times. `help` lists the
+commands; `raw 22 F1 90` sends arbitrary bytes.
+
+The scripted `./build/tester` runs a 19-step scenario. Three moments worth
+watching.
 
 **A VIN is 17 bytes and a CAN frame holds 8**, so the transport earns its keep:
 

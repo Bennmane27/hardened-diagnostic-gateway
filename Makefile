@@ -5,6 +5,7 @@
 #   make                     -> construit ecu, tester, fuzz_bus, fuzz_parser
 #   make test                -> tests unitaires (ASan + UBSan)
 #   make fuzz                -> campagne de fuzzing des analyseurs
+#   make demo                -> rejoue et reenregistre la demonstration
 #   make check-portability   -> verifie les invariants d architecture
 #   tests/interop/crossvalidate.sh -> validation croisee contre le noyau
 #   make clean               -> supprime build/
@@ -31,13 +32,17 @@ HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
 # de Linux.
 TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
-all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser
+all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli \
+     $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
 
 $(BUILD)/tester: src/tester/tester.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/tester/tester.c $(CORE) $(PLATFORM) -o $@
+
+$(BUILD)/diagcli: src/tester/diagcli.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) src/tester/diagcli.c $(CORE) $(PLATFORM) -o $@
 
 $(BUILD)/test_isotp: tests/test_isotp.c $(ISOTP) src/isotp/isotp.h | $(BUILD)
 	$(CC) $(TEST_CFLAGS) tests/test_isotp.c $(ISOTP) -o $@
@@ -71,6 +76,16 @@ $(BUILD)/fuzz_parser: fuzz/fuzz_parser.c $(ISOTP) $(UDS) $(HEADERS) | $(BUILD)
 # Pour une campagne longue : ./build/fuzz_parser 5000000 0x1234
 fuzz: $(BUILD)/fuzz_parser
 	./$(BUILD)/fuzz_parser 200000 0xC0FFEE
+
+# Rejoue la demonstration, la reenregistre et regenere le SVG anime du
+# README. Necessite asciinema.
+demo: all
+	@command -v asciinema >/dev/null 2>&1 || \
+	    { echo "asciinema absent : sudo apt install asciinema"; exit 1; }
+	DEMO_PACE=0.6 asciinema rec --overwrite --rows 34 --cols 100 \
+	    -c tools/demo/demo.sh docs/media/demo.cast
+	tools/demo/cast2svg.py docs/media/demo.cast docs/media/demo.svg \
+	    --rows 30 --fps 1.4
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -128,4 +143,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz check-portability clean
+.PHONY: all test fuzz demo check-portability clean

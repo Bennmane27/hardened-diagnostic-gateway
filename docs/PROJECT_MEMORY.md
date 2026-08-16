@@ -60,6 +60,7 @@ These are load-bearing. Violating one silently undoes the point of the project.
 | Access control | Session rules table, `S3server` expiry, security levels |
 | Fuzzing | In-process parser fuzzer + on-bus fault injector |
 | Interop | Cross-validated against the Linux kernel ISO-TP stack |
+| Demo | Interactive client `diagcli`, scripted run, animated SVG in the README |
 | CI | Build, invariants, tests, fuzz, strict warnings, cppcheck, end-to-end on vcan0 |
 | Tests | 4 suites, ASan + UBSan, 14 733 checks |
 
@@ -184,6 +185,19 @@ no privileged setup beyond `vcan0` itself. It self-tests the environment with a
 kernel-to-kernel round trip first, so a failure points at our stack rather than
 at a missing module.
 
+### D17 — The demo ships as an animated SVG, not a GIF
+
+`tools/demo/cast2svg.py` turns the asciinema recording into a self-contained
+animated SVG: ~100 KB against several megabytes for a GIF, sharp at any zoom,
+and GitHub renders it inline in the README. The generator uses only the Python
+standard library, so regenerating the demo needs nothing installed beyond
+`asciinema` itself.
+
+The recording is reproducible rather than a one-off capture: `tools/demo/demo.sh`
+is the script, `DEMO_PACE` controls its rhythm, and the simulated ECU is
+deterministic — so `make demo` after a change produces a comparable recording,
+not a different story.
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform
@@ -292,7 +306,7 @@ Status: `[x]` done · `[>]` in progress · `[ ]` not started
 --- suite possible, non planifiee ---
 
 [x] M34  Cross-validation against the Linux kernel ISO-TP stack
-[ ] M35  Interactive tester REPL, then a recorded demo GIF
+[x] M35  Interactive tester REPL and a recorded demo
 [ ] M36  SecurityAccess with HMAC-SHA256 and a hardware RNG
 [ ] M37  libFuzzer / AFL++ harnesses over the parsers
 [ ] M38  CAN FD

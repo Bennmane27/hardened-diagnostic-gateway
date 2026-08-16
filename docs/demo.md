@@ -1,6 +1,27 @@
 # Demonstration script
 
+![Demonstration](media/demo.svg)
+
 A reproducible walk-through, meant to be run in front of someone or recorded.
+
+The whole thing is scripted:
+
+```bash
+tools/demo/demo.sh              # play it
+make demo                       # play it, re-record it, regenerate the SVG
+asciinema play media/demo.cast  # replay the recording
+```
+
+`DEMO_PACE` controls the delay between commands — `DEMO_PACE=0.2` to check it
+quickly, the default `1.1` to present it.
+
+The recording is converted to an animated SVG by `tools/demo/cast2svg.py`, which
+has no dependencies beyond the Python standard library. An SVG rather than a
+GIF: a few dozen kilobytes instead of several megabytes, sharp at any size, and
+GitHub displays it inline.
+
+## By hand
+
 Roughly four minutes.
 
 Every run produces the same values: the simulated ECU evolves from a tick

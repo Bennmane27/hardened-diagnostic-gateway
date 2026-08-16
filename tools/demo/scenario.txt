@@ -1,0 +1,30 @@
+# --- La session par defaut ne donne acces a rien de sensible ---
+present
+reset
+# --- On ouvre une session etendue ---
+session extended
+# --- Lectures : identification, puis grandeurs vives ---
+read sw
+read rpm
+read temp
+# --- Le VIN fait 17 octets : ISO-TP le transporte en plusieurs trames ---
+read vin
+# --- Memoire de defauts ---
+dtc
+# --- Session ouverte, mais la commande sensible reste verrouillee ---
+reset
+# --- SecurityAccess : graine, mauvaise cle, nouvelle graine, bonne cle ---
+seed
+key DEADBEEF
+seed
+key
+# --- Rejeu immediat de la meme cle : la graine a ete consommee ---
+key
+# --- Operations desormais autorisees ---
+clear
+dtc
+reset
+# --- Le reset a tout reverrouille ---
+reset
+stats
+quit
