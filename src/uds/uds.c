@@ -33,6 +33,18 @@
 /* 0x50 + sous-fonction + 4 octets de sessionParameterRecord. */
 #define UDS_DSC_RESPONSE_LEN        6u
 
+/*
+ * 0x22 : SID + identifiant sur 2 octets.
+ *
+ * La norme autorise plusieurs identifiants dans une meme requete. Ce
+ * serveur n'en accepte qu'un : c'est une limite assumee, documentee
+ * dans le README, et non un oubli.
+ */
+#define UDS_RDBI_REQUEST_LEN        3u
+
+/* 0x62 + les 2 octets de l'identifiant, avant la valeur. */
+#define UDS_RDBI_HEADER_LEN         3u
+
 /* ------------------------------------------------------------------ */
 /* Libelles                                                            */
 /* ------------------------------------------------------------------ */
@@ -64,6 +76,8 @@ const char *uds_nrc_to_string(uint8_t nrc)
         return "subFunctionNotSupported";
     case UDS_NRC_INCORRECT_MESSAGE_LENGTH:
         return "incorrectMessageLengthOrInvalidFormat";
+    case UDS_NRC_RESPONSE_TOO_LONG:
+        return "responseTooLong";
     case UDS_NRC_CONDITIONS_NOT_CORRECT:
         return "conditionsNotCorrect";
     case UDS_NRC_REQUEST_OUT_OF_RANGE:
@@ -97,6 +111,8 @@ const char *uds_result_to_string(uds_result_t result)
         return "pointeur NULL";
     case UDS_ERR_BUFFER_TOO_SMALL:
         return "tampon de reponse trop petit";
+    case UDS_ERR_DID_NOT_FOUND:
+        return "identifiant de donnee inconnu";
     default:
         return "erreur inconnue";
     }
@@ -226,6 +242,112 @@ static uds_result_t handle_diagnostic_session_control(
 }
 
 /* ------------------------------------------------------------------ */
+/* 0x22 ReadDataByIdentifier                                           */
+/* ------------------------------------------------------------------ */
+
+static uds_result_t handle_read_data_by_identifier(
+    uds_context_t *ctx,
+    const uint8_t *request,
+    uint8_t request_len,
+    uint8_t *response,
+    uint8_t response_capacity,
+    uint8_t *response_len)
+{
+    uint16_t did;
+    uint8_t data_len = 0u;
+    uds_result_t provider_res;
+
+    /*
+     * Il faut au minimum de quoi ecrire une reponse negative, sinon on
+     * ne peut meme pas signaler l'erreur.
+     */
+    if (response_capacity < UDS_NEGATIVE_RESPONSE_LEN)
+    {
+        return UDS_ERR_BUFFER_TOO_SMALL;
+    }
+
+    if (request_len != UDS_RDBI_REQUEST_LEN)
+    {
+        return make_negative_response(UDS_SID_READ_DATA_BY_IDENTIFIER,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (ctx->did_read == NULL)
+    {
+        return make_negative_response(UDS_SID_READ_DATA_BY_IDENTIFIER,
+                                      UDS_NRC_SERVICE_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    /* L'identifiant est code sur 2 octets, poids fort en premier. */
+    did = (uint16_t)(((uint16_t)request[1] << 8) | (uint16_t)request[2]);
+
+    /*
+     * On ne peut pas appeler le fournisseur si la place restante ne
+     * suffit meme pas a l'en-tete de reponse.
+     */
+    if (response_capacity < UDS_RDBI_HEADER_LEN)
+    {
+        return make_negative_response(UDS_SID_READ_DATA_BY_IDENTIFIER,
+                                      UDS_NRC_RESPONSE_TOO_LONG,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    /*
+     * La valeur est ecrite directement a sa place finale, juste apres
+     * l'en-tete : aucune copie intermediaire, aucun tampon temporaire.
+     * En cas d'echec, l'en-tete n'est jamais ecrit et le tampon est
+     * ecrase par la reponse negative.
+     */
+    provider_res = ctx->did_read(did,
+                                 &response[UDS_RDBI_HEADER_LEN],
+                                 (uint8_t)(response_capacity -
+                                           UDS_RDBI_HEADER_LEN),
+                                 &data_len,
+                                 ctx->user_ctx);
+
+    switch (provider_res)
+    {
+    case UDS_OK:
+        response[0] = (uint8_t)(UDS_SID_READ_DATA_BY_IDENTIFIER +
+                                UDS_POSITIVE_RESPONSE_OFFSET);
+        response[1] = (uint8_t)((did >> 8) & 0xFFu);
+        response[2] = (uint8_t)(did & 0xFFu);
+
+        *response_len = (uint8_t)(UDS_RDBI_HEADER_LEN + data_len);
+        return UDS_OK;
+
+    case UDS_ERR_DID_NOT_FOUND:
+        return make_negative_response(UDS_SID_READ_DATA_BY_IDENTIFIER,
+                                      UDS_NRC_REQUEST_OUT_OF_RANGE,
+                                      response, response_capacity,
+                                      response_len);
+
+    /*
+     * La valeur existe mais ne tient pas dans ce que le transport sait
+     * emettre. C'est exactement le cas prevu par responseTooLong : la
+     * limite du reseau remonte comme une erreur de protocole, pas comme
+     * une troncature silencieuse.
+     */
+    case UDS_ERR_BUFFER_TOO_SMALL:
+        return make_negative_response(UDS_SID_READ_DATA_BY_IDENTIFIER,
+                                      UDS_NRC_RESPONSE_TOO_LONG,
+                                      response, response_capacity,
+                                      response_len);
+
+    default:
+        return make_negative_response(UDS_SID_READ_DATA_BY_IDENTIFIER,
+                                      UDS_NRC_GENERAL_REJECT,
+                                      response, response_capacity,
+                                      response_len);
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Point d'entree                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -233,7 +355,20 @@ void uds_init(uds_context_t *ctx)
 {
     if (ctx != NULL)
     {
-        ctx->session = UDS_SESSION_DEFAULT;
+        ctx->session  = UDS_SESSION_DEFAULT;
+        ctx->did_read = NULL;
+        ctx->user_ctx = NULL;
+    }
+}
+
+void uds_set_did_provider(uds_context_t *ctx,
+                          uds_did_read_fn did_read,
+                          void *user_ctx)
+{
+    if (ctx != NULL)
+    {
+        ctx->did_read = did_read;
+        ctx->user_ctx = user_ctx;
     }
 }
 
@@ -271,6 +406,11 @@ uds_result_t uds_handle_request(uds_context_t *ctx,
         return handle_diagnostic_session_control(ctx, request, request_len,
                                                  response, response_capacity,
                                                  response_len);
+
+    case UDS_SID_READ_DATA_BY_IDENTIFIER:
+        return handle_read_data_by_identifier(ctx, request, request_len,
+                                              response, response_capacity,
+                                              response_len);
 
     default:
         return make_negative_response(sid,

@@ -28,6 +28,7 @@
 
 /* Identifiants de service (SID). */
 #define UDS_SID_DIAGNOSTIC_SESSION_CONTROL   0x10u
+#define UDS_SID_READ_DATA_BY_IDENTIFIER      0x22u
 
 /*
  * Une reponse positive reutilise le SID de la requete augmente de 0x40.
@@ -68,6 +69,7 @@
 #define UDS_NRC_SERVICE_NOT_SUPPORTED                0x11u
 #define UDS_NRC_SUB_FUNCTION_NOT_SUPPORTED           0x12u
 #define UDS_NRC_INCORRECT_MESSAGE_LENGTH             0x13u
+#define UDS_NRC_RESPONSE_TOO_LONG                    0x14u
 #define UDS_NRC_CONDITIONS_NOT_CORRECT               0x22u
 #define UDS_NRC_REQUEST_OUT_OF_RANGE                 0x31u
 #define UDS_NRC_SECURITY_ACCESS_DENIED               0x33u
@@ -108,11 +110,6 @@ typedef enum
  * courante. Le compteur de securite, l'horodatage de derniere activite
  * et la machine a etats complete viendront avec leurs services.
  */
-typedef struct
-{
-    uds_session_t session;
-} uds_context_t;
-
 /* ------------------------------------------------------------------ */
 /* Resultats                                                           */
 /* ------------------------------------------------------------------ */
@@ -122,15 +119,65 @@ typedef enum
     UDS_OK = 0,                 /* une reponse est prete dans le tampon */
     UDS_NO_RESPONSE,            /* ne rien emettre sur le bus           */
     UDS_ERR_NULL_POINTER,
-    UDS_ERR_BUFFER_TOO_SMALL
+    UDS_ERR_BUFFER_TOO_SMALL,
+    UDS_ERR_DID_NOT_FOUND       /* renvoye par un fournisseur de DID    */
 } uds_result_t;
+
+/* ------------------------------------------------------------------ */
+/* Fourniture des donnees applicatives                                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Le serveur UDS ne connait aucune donnee de vehicule. Il sait
+ * seulement mettre en forme une requete 0x22 et sa reponse ; la valeur
+ * elle-meme est fournie par l'application via ce pointeur de fonction.
+ *
+ * Cette indirection est ce qui evite que uds.c contienne un jour un
+ * regime moteur ou un VIN. Le meme serveur peut servir un ECU moteur ou
+ * un calculateur de freinage sans etre modifie, et les tests peuvent
+ * injecter un fournisseur factice.
+ *
+ * did          : identifiant demande
+ * out          : ou ecrire la valeur
+ * out_capacity : place disponible
+ * out_len      : recoit la taille ecrite
+ * user_ctx     : donnees applicatives opaques passees a uds_set_did_provider
+ *
+ * Retour attendu :
+ *   UDS_OK                      valeur ecrite
+ *   UDS_ERR_DID_NOT_FOUND       identifiant inconnu -> NRC 0x31
+ *   UDS_ERR_BUFFER_TOO_SMALL    valeur trop grande pour le transport
+ *                               -> NRC 0x14 responseTooLong
+ */
+typedef uds_result_t (*uds_did_read_fn)(uint16_t did,
+                                        uint8_t *out,
+                                        uint8_t out_capacity,
+                                        uint8_t *out_len,
+                                        void *user_ctx);
+
+typedef struct
+{
+    uds_session_t   session;
+    uds_did_read_fn did_read;
+    void           *user_ctx;
+} uds_context_t;
 
 /* ------------------------------------------------------------------ */
 /* API                                                                 */
 /* ------------------------------------------------------------------ */
 
-/* Place le contexte dans son etat initial : session par defaut. */
+/*
+ * Place le contexte dans son etat initial : session par defaut, aucun
+ * fournisseur de DID. Sans fournisseur, le service 0x22 est refuse par
+ * un NRC serviceNotSupported : un serveur qui ne peut rien lire ne
+ * "supporte" pas reellement le service.
+ */
 void uds_init(uds_context_t *ctx);
+
+/* Branche la source des donnees applicatives lues par 0x22. */
+void uds_set_did_provider(uds_context_t *ctx,
+                          uds_did_read_fn did_read,
+                          void *user_ctx);
 
 /*
  * Traite une requete UDS.

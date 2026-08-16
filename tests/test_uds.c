@@ -248,10 +248,21 @@ static void test_edge_cases(void)
     }
 
     /*
-     * Balayage : aucun SID ne doit provoquer de plantage, et tout SID
-     * autre que 0x10 doit produire un serviceNotSupported.
+     * Balayage : aucun SID ne doit provoquer de plantage, et tout
+     * service non implemente doit produire un serviceNotSupported.
+     *
+     * Les services implementes sont exclus du compte. Cette liste doit
+     * grandir a chaque nouveau service : c'est volontaire, elle sert de
+     * garde-fou contre un service ajoute sans test.
      */
     {
+        static const uint8_t implemented[] = {
+            UDS_SID_DIAGNOSTIC_SESSION_CONTROL,
+            UDS_SID_READ_DATA_BY_IDENTIFIER
+        };
+        const int implemented_count =
+            (int)(sizeof(implemented) / sizeof(implemented[0]));
+
         int sid;
         int rejected = 0;
 
@@ -259,23 +270,189 @@ static void test_edge_cases(void)
         {
             uint8_t req[2];
             uds_result_t res;
+            size_t k;
+            int is_implemented = 0;
+
+            for (k = 0; k < sizeof(implemented) / sizeof(implemented[0]); k++)
+            {
+                if ((uint8_t)sid == implemented[k])
+                {
+                    is_implemented = 1;
+                }
+            }
+            if (is_implemented)
+            {
+                continue;
+            }
 
             req[0] = (uint8_t)sid;
             req[1] = 0x03;
 
             res = run(req, 2, resp, &len, NULL);
 
-            if (sid != 0x10)
+            if ((res == UDS_OK) && (resp[0] == 0x7F) &&
+                (resp[1] == (uint8_t)sid) &&
+                (resp[2] == UDS_NRC_SERVICE_NOT_SUPPORTED))
             {
-                if ((res == UDS_OK) && (resp[0] == 0x7F) &&
-                    (resp[1] == (uint8_t)sid) &&
-                    (resp[2] == UDS_NRC_SERVICE_NOT_SUPPORTED))
-                {
-                    rejected++;
-                }
+                rejected++;
             }
         }
-        check(rejected == 255, "les 255 SID non implementes sont rejetes");
+        check(rejected == (256 - implemented_count),
+              "tous les SID non implementes sont rejetes");
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. 0x22 ReadDataByIdentifier                                        */
+/*                                                                     */
+/*    Le fournisseur de DID est ici un faux, sans le moindre lien avec */
+/*    l'ECU virtuel. C'est precisement ce que permet le decouplage par */
+/*    pointeur de fonction : tester le service sans embarquer          */
+/*    l'application.                                                   */
+/* ------------------------------------------------------------------ */
+
+#define FAKE_DID_SHORT     0x1234u   /* 2 octets, tient sans probleme */
+#define FAKE_DID_HUGE      0x5678u   /* 20 octets, ne tient pas       */
+
+static int g_provider_calls = 0;
+
+static uds_result_t fake_did_read(uint16_t did, uint8_t *out,
+                                  uint8_t out_capacity, uint8_t *out_len,
+                                  void *user_ctx)
+{
+    (void)user_ctx;
+    g_provider_calls++;
+
+    if (did == FAKE_DID_SHORT)
+    {
+        if (out_capacity < 2u)
+        {
+            return UDS_ERR_BUFFER_TOO_SMALL;
+        }
+        out[0] = 0xCA;
+        out[1] = 0xFE;
+        *out_len = 2u;
+        return UDS_OK;
+    }
+
+    if (did == FAKE_DID_HUGE)
+    {
+        /* Valeur connue mais trop grande pour le transport. */
+        if (out_capacity < 20u)
+        {
+            return UDS_ERR_BUFFER_TOO_SMALL;
+        }
+        *out_len = 20u;
+        return UDS_OK;
+    }
+
+    return UDS_ERR_DID_NOT_FOUND;
+}
+
+static void test_read_data_by_identifier(void)
+{
+    uint8_t resp[UDS_MAX_RESPONSE_SIZE];
+    uint8_t len;
+    uds_context_t ctx;
+
+    printf("[6] ReadDataByIdentifier\n");
+
+    /* Sans fournisseur branche, le service n'est pas supporte. */
+    {
+        const uint8_t req[] = { 0x22, 0x12, 0x34 };
+        uds_init(&ctx);
+        check(uds_handle_request(&ctx, req, 3, resp, sizeof(resp), &len)
+              == UDS_OK, "requete traitee sans fournisseur");
+        check(resp[0] == 0x7F && resp[1] == 0x22, "7F 22");
+        check(resp[2] == UDS_NRC_SERVICE_NOT_SUPPORTED,
+              "NRC 0x11 sans fournisseur de DID");
+    }
+
+    uds_init(&ctx);
+    uds_set_did_provider(&ctx, fake_did_read, NULL);
+
+    /* Lecture valide : 22 12 34 -> 62 12 34 CA FE */
+    {
+        const uint8_t req[] = { 0x22, 0x12, 0x34 };
+        check(uds_handle_request(&ctx, req, 3, resp, sizeof(resp), &len)
+              == UDS_OK, "DID connu accepte");
+        check(len == 5u, "reponse de 5 octets");
+        check(resp[0] == 0x62, "SID de reponse = 0x22 + 0x40");
+        check(resp[1] == 0x12 && resp[2] == 0x34,
+              "identifiant repete, poids fort en premier");
+        check(resp[3] == 0xCA && resp[4] == 0xFE, "valeur transmise");
+    }
+
+    /* DID inconnu -> 7F 22 31 requestOutOfRange */
+    {
+        const uint8_t req[] = { 0x22, 0x00, 0x01 };
+        check(uds_handle_request(&ctx, req, 3, resp, sizeof(resp), &len)
+              == UDS_OK, "DID inconnu traite");
+        check(resp[0] == 0x7F && resp[1] == 0x22, "7F 22");
+        check(resp[2] == UDS_NRC_REQUEST_OUT_OF_RANGE, "NRC 0x31");
+    }
+
+    /*
+     * DID connu mais valeur trop grande pour le transport actuel.
+     * La limite du reseau doit remonter comme responseTooLong, jamais
+     * comme une troncature silencieuse.
+     */
+    {
+        const uint8_t req[] = { 0x22, 0x56, 0x78 };
+        check(uds_handle_request(&ctx, req, 3, resp, sizeof(resp), &len)
+              == UDS_OK, "DID trop grand traite");
+        check(resp[0] == 0x7F && resp[1] == 0x22, "7F 22");
+        check(resp[2] == UDS_NRC_RESPONSE_TOO_LONG, "NRC 0x14 responseTooLong");
+        check(len == 3u, "la reponse negative reste de 3 octets");
+    }
+
+    /* Longueurs de requete incorrectes. */
+    {
+        const uint8_t req_short[] = { 0x22, 0x12 };
+        const uint8_t req_long[]  = { 0x22, 0x12, 0x34, 0x56 };
+
+        check(uds_handle_request(&ctx, req_short, 2, resp, sizeof(resp), &len)
+              == UDS_OK, "22 tronque traite");
+        check(resp[2] == UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+              "NRC 0x13 sur requete trop courte");
+
+        check(uds_handle_request(&ctx, req_long, 4, resp, sizeof(resp), &len)
+              == UDS_OK, "22 avec 2 DID traite");
+        check(resp[2] == UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+              "NRC 0x13 : plusieurs identifiants non supportes");
+    }
+
+    /*
+     * Une requete de longueur invalide ne doit meme pas atteindre le
+     * fournisseur : le controle de forme precede l'acces aux donnees.
+     */
+    {
+        const uint8_t req[] = { 0x22, 0x12 };
+        int before = g_provider_calls;
+        (void)uds_handle_request(&ctx, req, 2, resp, sizeof(resp), &len);
+        check(g_provider_calls == before,
+              "le fournisseur n'est pas appele sur une requete malformee");
+    }
+
+    /* Balayage : aucun DID ne doit faire planter le serveur. */
+    {
+        int did;
+        int handled = 0;
+
+        for (did = 0; did <= 0xFF; did++)
+        {
+            uint8_t req[3];
+            req[0] = 0x22;
+            req[1] = 0x00;
+            req[2] = (uint8_t)did;
+
+            if (uds_handle_request(&ctx, req, 3, resp, sizeof(resp), &len)
+                == UDS_OK)
+            {
+                handled++;
+            }
+        }
+        check(handled == 256, "les 256 identifiants balayes sont traites");
     }
 }
 
@@ -290,6 +467,7 @@ int main(void)
     test_suppress_bit();
     test_negative_responses();
     test_edge_cases();
+    test_read_data_by_identifier();
 
     printf("\n=============================================\n");
     printf(" %d verifications, %d echec(s)\n", g_checks, g_failures);
