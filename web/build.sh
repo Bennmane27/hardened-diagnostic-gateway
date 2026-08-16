@@ -28,14 +28,15 @@ fi
 SRC="web/wasm/ahdg_wasm.c \
      src/uds/uds.c \
      src/isotp/isotp.c src/isotp/isotp_rx.c src/isotp/isotp_tx.c \
-     src/ecu/ecu_data.c"
+     src/ecu/ecu_data.c \
+     src/gateway/gateway.c"
 
 # Fonctions C exposees au JavaScript. Le prefixe underscore est la
 # convention de nommage d'emscripten.
-EXPORTS='["_ahdg_version","_ahdg_reset","_ahdg_state","_ahdg_request","_ahdg_isotp_decode","_ahdg_isotp_encode","_ahdg_explore","_ahdg_invariants"]'
+EXPORTS='["_ahdg_version","_ahdg_reset","_ahdg_state","_ahdg_request","_ahdg_isotp_decode","_ahdg_isotp_encode","_ahdg_explore","_ahdg_invariants","_ahdg_benchmark"]'
 
 emcc $SRC \
-    -Isrc/isotp -Isrc/uds -Isrc/ecu -Isrc/gateway -Ifuzz \
+    -Isrc/isotp -Isrc/uds -Isrc/ecu -Isrc/gateway -Ifuzz -Ibench \
     -O2 \
     -sMODULARIZE=1 \
     -sEXPORT_NAME=createAHDG \

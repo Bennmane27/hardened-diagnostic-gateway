@@ -25,6 +25,8 @@
 #include "ecu_data.h"
 #include "invariants.h"
 #include "ahdg_explore_core.h"
+#include "gateway.h"
+#include "bench_core.h"
 
 /* EMSCRIPTEN_KEEPALIVE marque les fonctions a exporter. Hors emscripten
  * (verification avec gcc), on le neutralise pour que le fichier compile. */
@@ -322,6 +324,36 @@ AHDG_EXPORT const char *ahdg_invariants(void)
                               tab[i].code, tab[i].summary);
     }
     (void)snprintf(&g_json[p], sizeof(g_json) - p, "]");
+    return g_json;
+}
+
+
+/*
+ * Lance le benchmark S0 / S1 / S2 dans le navigateur : le meme code que
+ * bench/bench.c (via bench_core.h). Renvoie les compteurs.
+ */
+AHDG_EXPORT const char *ahdg_benchmark(int scenarios, unsigned int seed)
+{
+    bench_results_t r;
+
+    if (scenarios < 1) { scenarios = 1; }
+    if (scenarios > 2000000) { scenarios = 2000000; }
+
+    bench_run((uint64_t)scenarios, (uint32_t)seed, 500u, &r);
+
+    snprintf(g_json, sizeof(g_json),
+             "{\"scenarios\":%llu,"
+             "\"s0\":%llu,\"s1\":%llu,\"s2\":%llu,"
+             "\"avail_total\":%llu,\"s0_avail\":%llu,\"s2_avail\":%llu,"
+             "\"gw_seen\":%u,\"gw_allowed\":%u,\"gw_dropped\":%u}",
+             (unsigned long long)r.scenarios,
+             (unsigned long long)r.s0_unauth,
+             (unsigned long long)r.s1_unauth,
+             (unsigned long long)r.s2_unauth,
+             (unsigned long long)r.avail_total,
+             (unsigned long long)r.s0_avail,
+             (unsigned long long)r.s2_avail,
+             r.gw_seen, r.gw_allowed, r.gw_dropped);
     return g_json;
 }
 

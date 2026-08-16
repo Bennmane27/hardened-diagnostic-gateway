@@ -127,6 +127,24 @@
     </div>
   </section>
 
+
+  <!-- Gateway benchmark -->
+  <section class="card">
+    <h2>Gateway benchmark <span>· S0 / S1 / S2, real gateway.c</span></h2>
+    <div class="body">
+      <div class="row">
+        <label class="chip">scenarios
+          <select id="bn-budget" style="background:#0b0e13;color:var(--fg);border:none">
+            <option value="50000">50 000</option>
+            <option value="200000" selected>200 000</option>
+          </select>
+        </label>
+        <button class="primary" id="bn-run">Run</button>
+      </div>
+      <pre class="term" id="bn-out"><span class="dim">The same gateway (src/gateway/gateway.c) as an admission controller in front of a permissive ECU, versus a stateless firewall, on the same attack corpus. A stateless filter cannot tell an authorized reset from an unauthorized one; the gateway reconstructs the security state and blocks every unauthorized reset while breaking no legitimate flow.</span></pre>
+    </div>
+  </section>
+
   <!-- ISO-TP inspector -->
   <section class="card">
     <h2>ISO-TP inspector <span>· real isotp.c</span></h2>
@@ -225,6 +243,35 @@ function runExplore(){
   }, 30);
 }
 
+
+function runBenchmark(){
+  const out = el('bn-out');
+  out.innerHTML = '';
+  const budget = parseInt(el('bn-budget').value, 10);
+  line(out, 'same ECU, same attack corpus, three protections: ' +
+            budget.toLocaleString() + ' scenarios', 'note');
+  setTimeout(() => {
+    const t0 = performance.now();
+    const j = JSON.parse(api.benchmark(budget, 0xB0A7));
+    const ms = Math.round(performance.now() - t0);
+    line(out, '');
+    line(out, '  unauthorized resets reaching the ECU:');
+    line(out, '  S0  ECU only            ' + j.s0.toLocaleString(), 'bad');
+    line(out, '  S1  stateless firewall  ' + j.s1.toLocaleString() +
+              '   (blind - identical)', 'bad');
+    line(out, '  S2  AHDG gateway        ' + j.s2.toLocaleString() +
+              '   <- blocked', j.s2 === 0 ? 'ok' : 'bad');
+    line(out, '');
+    line(out, '  availability (legitimate flows served):');
+    line(out, '  S0 ' + j.s0_avail + '/' + j.avail_total +
+              '   S2 ' + j.s2_avail + '/' + j.avail_total,
+         (j.s2_avail === j.avail_total) ? 'ok' : 'bad');
+    line(out, '');
+    line(out, '  gateway: ' + j.gw_seen.toLocaleString() + ' seen, ' +
+              j.gw_dropped.toLocaleString() + ' dropped   (' + ms + ' ms)', 'dim');
+  }, 30);
+}
+
 function decodeTp(){
   const j = JSON.parse(api.isotp_decode(el('tp-in').value));
   const out = el('tp-out');
@@ -258,6 +305,7 @@ createAHDG().then(mod => {
   api.isotp_decode = M.cwrap('ahdg_isotp_decode', 'string', ['string']);
   api.explore      = M.cwrap('ahdg_explore', 'string', ['number', 'number']);
   api.invariants   = M.cwrap('ahdg_invariants', 'string', []);
+  api.benchmark    = M.cwrap('ahdg_benchmark', 'string', ['number', 'number']);
 
   el('chip-wasm').textContent = 'WASM ready';
   el('chip-wasm').className = 'chip ok';
@@ -273,6 +321,7 @@ createAHDG().then(mod => {
   el('uds-in').addEventListener('keydown', e => { if (e.key === 'Enter') sendUds(el('uds-in').value); });
   el('uds-reset').onclick = () => { setChips(JSON.parse(api.reset())); line(el('uds-out'), '-- ECU reset --', 'dim'); };
   el('ex-run').onclick = runExplore;
+  el('bn-run').onclick = runBenchmark;
   el('tp-decode').onclick = decodeTp;
   el('tp-in').addEventListener('keydown', e => { if (e.key === 'Enter') decodeTp(); });
 
