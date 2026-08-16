@@ -7,6 +7,7 @@
 #   make fuzz                -> campagne de fuzzing des analyseurs
 #   make explore             -> exploration adversariale des invariants UDS
 #   make frames              -> exploration adversariale au niveau des trames CAN
+#   make bench               -> banc de comparaison S0 / S1 / S2
 #   make demo                -> rejoue et reenregistre la demonstration
 #   make web                 -> console web sur http://127.0.0.1:8800
 #   make setup               -> rappelle comment rendre vcan0 permanente
@@ -25,6 +26,7 @@ BUILD   := build
 ISOTP    := src/isotp/isotp.c src/isotp/isotp_rx.c src/isotp/isotp_tx.c
 UDS      := src/uds/uds.c
 ECU_DATA := src/ecu/ecu_data.c
+GATEWAY  := src/gateway/gateway.c
 PLATFORM := src/platform/socketcan/can_socket.c src/platform/diag_link.c
 CORE     := $(ISOTP) $(UDS) $(ECU_DATA)
 HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
@@ -38,7 +40,7 @@ TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES
 
 all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli \
      $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser $(BUILD)/ahdg_explore \
-     $(BUILD)/ahdg_frames
+     $(BUILD)/ahdg_frames $(BUILD)/bench
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
@@ -104,6 +106,15 @@ $(BUILD)/ahdg_frames: fuzz/ahdg_frames.c $(ISOTP_C) $(UDS) $(ECU_DATA) \
 frames: $(BUILD)/ahdg_frames
 	./$(BUILD)/ahdg_frames 300000 0xF00D
 
+$(BUILD)/bench: bench/bench.c $(UDS) $(GATEWAY) src/uds/uds.h \
+               src/gateway/gateway.h src/gateway/invariants.h | $(BUILD)
+	$(CC) $(TEST_CFLAGS) bench/bench.c $(UDS) $(GATEWAY) -o $@
+
+# Banc S0 / S1 / S2 : la gateway d'admission comparee a un ECU seul et a
+# un filtre sans etat, sur le meme corpus d'attaques.
+bench: $(BUILD)/bench
+	./$(BUILD)/bench 200000 0xB0A7
+
 # Rejoue la demonstration, la reenregistre et regenere le SVG anime du
 # README. Necessite asciinema.
 demo: all
@@ -156,19 +167,19 @@ check-portability:
 	    echo "ECHEC : allocation dynamique ci-dessus"; exit 1; \
 	 else echo "OK"; fi
 	@echo "== I1bis : les couches protocole compilent hors contexte Linux =="
-	@for f in $(ISOTP) $(UDS); do \
+	@for f in $(ISOTP) $(UDS) $(GATEWAY); do \
 	    $(CC) -Wall -Wextra -Werror -std=c11 -pedantic $(INCLUDES) \
 	        -c $$f -o /dev/null || exit 1; \
 	 done
 	@echo "OK"
 	@echo "== I1ter : couches protocole sous -Wconversion et -Wshadow =="
-	@for f in $(ISOTP) $(UDS); do \
+	@for f in $(ISOTP) $(UDS) $(GATEWAY); do \
 	    $(CC) -Wall -Wextra -Werror -Wconversion -Wshadow -Wpedantic \
 	        -std=c11 $(INCLUDES) -c $$f -o /dev/null || exit 1; \
 	 done
 	@echo "OK"
 	@echo "== I1quater : couches protocole compilables sans libc ni OS =="
-	@for f in $(ISOTP) $(UDS); do \
+	@for f in $(ISOTP) $(UDS) $(GATEWAY); do \
 	    $(CC) -Wall -Wextra -Werror -std=c11 -pedantic \
 	        -ffreestanding -nostdinc \
 	        -isystem "$$($(CC) -print-file-name=include)" \
@@ -187,4 +198,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz explore frames demo web setup check-portability clean
+.PHONY: all test fuzz explore frames bench demo web setup check-portability clean

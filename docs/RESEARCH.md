@@ -205,6 +205,17 @@ and the triggering frame, so a violation is not just stopped but **explained**.
 
 ---
 
+## 4ter. Benchmark result (S0/S1/S2)
+
+`bench/bench.c` puts three protections in front of the same permissive ECU on the
+same attack corpus. A stateless firewall lets through every one of ~84,000
+unauthorized resets (they are well-formed, known services); the AHDG gateway
+(`src/gateway/gateway.c`, the hardened UDS server reused as an admission
+controller) blocks all of them and blocks no legitimate flow (500/500), at ~80 ns
+per request. This is milestones M52 (enforcement) and M57 (benchmark). See
+[findings/BENCH-S0-S1-S2.md](findings/BENCH-S0-S1-S2.md). Remaining: RECOVER
+(M54), the live two-bus mediator (M53), and the STM32 latency (M58).
+
 ## 4bis. First experimental support (frame level)
 
 `fuzz/ahdg_frames.c` already drives the real `isotp_rx + uds` pipeline with

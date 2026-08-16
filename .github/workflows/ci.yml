@@ -41,6 +41,12 @@ jobs:
       - name: Frame-level cross-layer exploration
         run: ./build/ahdg_frames 300000 0xF00D
 
+      # Banc de comparaison : la gateway d'admission bloque-t-elle les
+      # operations non autorisees qu'un filtre sans etat laisse passer,
+      # sans bloquer le diagnostic legitime ? Sortie non nulle sinon.
+      - name: Benchmark S0 / S1 / S2
+        run: ./build/bench 200000 0xB0A7
+
   strict-warnings:
     name: Strict warnings
     runs-on: ubuntu-latest

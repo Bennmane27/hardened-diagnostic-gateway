@@ -22,6 +22,7 @@ production code executing in your tab. Built and deployed by
 ```
 14 733 unit checks · 2 000 000 fuzz cases · 12 994 183 ISO-TP frames
 Cross-validated against the Linux kernel ISO-TP stack
+Gateway S2 vs stateless firewall S1: 83,895 -> 0 unauthorized resets, ~80 ns/req
 0 failures · 0 sanitizer findings · 0 heap allocations
 ```
 

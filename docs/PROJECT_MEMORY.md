@@ -303,6 +303,25 @@ result: it is the first experimental support for the cross-layer claims, and it
 says the transport's reset-on-anomaly discipline closes the authority-forging path
 by construction. Do not report it as proof, and never inflate it to "impossible".
 
+### D26 — The gateway is the hardened UDS server reused as an admission controller
+
+`src/gateway/gateway.c` runs the production hardened `uds.c` as a shadow,
+synchronized on the ECU by observing both directions (crucially the SecurityAccess
+seed the ECU issues), and forwards a request only if the hardened policy would
+accept it. So the policy is not a second implementation that could drift - it IS
+the audited server, reused. A permissive ECU behind it inherits the hardened
+policy. Portable (freestanding, -Wconversion clean).
+
+### D27 — The S0/S1/S2 benchmark demonstrates the thesis, honestly
+
+`bench/bench.c`: same permissive ECU, same attack corpus, three protections.
+Result (docs/findings/BENCH-S0-S1-S2.md): a stateless firewall blocks 0 of ~84k
+unauthorized resets (they are well-formed known services - indistinguishable
+without state), the gateway blocks all of them, and it blocks no legitimate flow
+(500/500), at ~80 ns/request on host. The permissive ECU is a labeled model of a
+realistic weaker ECU, not a strawman; the result is one attack class vs one
+baseline, stated as such - not a coverage claim. The STM32 latency is M58.
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform

@@ -36,12 +36,12 @@ reproducible experiment.
 |---|-----------|--------|
 | M50 | `invariants.h` — cross-layer invariant catalogue as code | done |
 | M51 | Gateway shadow state: passive ISO-TP + UDS tracking | **partial** — frame-level explorer reconstructs combined state (`fuzz/ahdg_frames.c`) |
-| M52 | Invariant engine: evaluate, verdict ALLOW / DROP / RECOVER | |
+| M52 | Invariant engine: evaluate, verdict ALLOW / DROP / RECOVER | **partial** — gateway admits via the hardened policy (`src/gateway/gateway.c`) |
 | M53 | In-line CAN gateway, transparent on the nominal path | |
 | M54 | RECOVER: post-violation resynchronization, availability restored | |
 | M55 | Adversarial state-space explorer + delta-debug minimizer | **partial** — UDS-level explorer (`fuzz/ahdg_explore.c`) live; found AHDG-0001 |
 | M56 | Frozen counterexample corpus + exact replay | |
-| M57 | Benchmark harness S0 (ECU) / S1 (firewall) / S2 (gateway) | |
+| M57 | Benchmark harness S0 / S1 / S2 | **done** — 83,895→0 unauthorized resets, availability 500/500, ~80 ns ([bench doc](docs/findings/BENCH-S0-S1-S2.md)) |
 | M58 | STM32 + FDCAN port, measured latency | |
 | M59 | One-command reproduction + CI gate on blocked-attack count | |
 | M60 | Prior-art review — hard gate on the novelty claim | |
