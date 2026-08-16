@@ -2,10 +2,11 @@
 #
 # Build minimal, sans dependance externe.
 #
-#   make                     -> construit build/ecu et build/tester
+#   make                     -> construit ecu, tester, fuzz_bus, fuzz_parser
 #   make test                -> tests unitaires (ASan + UBSan)
 #   make fuzz                -> campagne de fuzzing des analyseurs
-#   make check-portability   -> verifie les invariants I1 et I2
+#   make check-portability   -> verifie les invariants d architecture
+#   tests/interop/crossvalidate.sh -> validation croisee contre le noyau
 #   make clean               -> supprime build/
 #
 # _DEFAULT_SOURCE est requis : en -std=c11 strict, la glibc masque
@@ -30,7 +31,7 @@ HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
 # de Linux.
 TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
-all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/fuzz_bus
+all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
