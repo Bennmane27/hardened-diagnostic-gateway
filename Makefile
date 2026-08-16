@@ -107,6 +107,14 @@ check-portability:
 	        -std=c11 $(INCLUDES) -c $$f -o /dev/null || exit 1; \
 	 done
 	@echo "OK"
+	@echo "== I1quater : couches protocole compilables sans libc ni OS =="
+	@for f in $(ISOTP) $(UDS); do \
+	    $(CC) -Wall -Wextra -Werror -std=c11 -pedantic \
+	        -ffreestanding -nostdinc \
+	        -isystem "$$($(CC) -print-file-name=include)" \
+	        $(INCLUDES) -c $$f -o /dev/null || exit 1; \
+	 done
+	@echo "OK"
 	@echo "== I2bis : aucun symbole d'allocation dans les binaires =="
 	@$(MAKE) --no-print-directory $(BUILD)/ecu $(BUILD)/tester >/dev/null
 	@for b in $(BUILD)/ecu $(BUILD)/tester; do \

@@ -5,39 +5,35 @@ Status of each milestone. The detailed rationale behind every decision lives in
 
 ## Done
 
-| # | Milestone | Commit |
-|---|---|---|
-| M01 | ISO-TP Single Frame module | `9fb2b42`, `aa1cb80` |
-| M02 | Single Frame unit tests | `aea496e` |
-| M04 | UDS module extraction | `a3293dc` |
-| M05 | UDS negative responses | `a3293dc` |
-| M08 | ReadDataByIdentifier + virtual ECU data model | `c91ec8d`, `a2a76b7` |
-
-## In progress
-
 | # | Milestone |
 |---|---|
+| M01–M02 | ISO-TP Single Frame module and its unit tests |
+| M03 | SocketCAN transport layer, built once a second caller justified it |
+| M04–M05 | UDS module extraction, negative responses |
+| M08 | ReadDataByIdentifier, virtual ECU data model |
 | M11–M16 | ISO-TP multi-frame: First Frame, Flow Control, Consecutive Frames, reassembly, transmission, sequence errors |
+| M17–M18 | Injectable clock, `N_Bs` / `N_Cr` timers and their tests |
+| M06–M07 | Session access rules, `TesterPresent`, `S3server` expiry |
+| M09–M10 | `ECUReset`, DTC model, `ReadDTCInformation`, `ClearDiagnosticInformation` |
+| M20–M22 | `SecurityAccess`, replay refusal, brute-force lockout |
+| M23–M24 | On-bus fault injector, in-process parser fuzzer |
+| M26–M27 | Sanitizers and static analysis in CI |
+| M29–M30 | GitHub Actions, measured metrics |
+| M32 | Portability proof: protocol layers build freestanding, no external symbols |
 
-## Next
+## Not planned yet
 
-| # | Milestone | Why it comes here |
+| # | Milestone | Why it would matter |
 |---|---|---|
-| M17–M18 | Timeout abstraction and its tests | Multi-frame is meaningless without `N_Bs` / `N_Cr`: a peer that stops mid-transfer must not wedge the receiver |
-| M06–M07 | Session access rules, `TesterPresent` | Sessions are tracked but gate nothing yet |
-| M09–M10 | `ECUReset`, DTC model, `ReadDTCInformation`, `ClearDiagnosticInformation` | Makes the virtual ECU behave like a real one |
-| M20–M22 | `SecurityAccess`, brute-force protection | Needs stable sessions underneath |
-| M23–M24 | Fault injector and parser fuzzing | Needs a state machine worth attacking |
-| M26–M30 | Sanitizers in CI, static analysis, GitHub Actions, measured metrics | |
-| M32 | Portability proof: protocol core built with no Linux headers | |
-
-## Later
-
-CAN FD, an STM32 + FreeRTOS port, DoIP.
+| M34 | Cross-validation against the Linux kernel ISO-TP stack | The most valuable test still missing: it catches a stack that works only because both ends share the same misunderstanding |
+| M35 | Interactive tester REPL, then a recorded demo GIF | Turns the demo into something watchable without a terminal |
+| M36 | `SecurityAccess` with HMAC-SHA256 and a hardware RNG | Replaces the demonstration key algorithm with a real one |
+| M37 | libFuzzer / AFL++ harnesses over the parsers | Coverage-guided fuzzing finds what a hand-rolled generator misses |
+| M38 | CAN FD | 64-byte frames change the ISO-TP framing rules |
+| M39 | STM32 + FreeRTOS port of `src/platform/` | The portability work already done, actually exercised |
 
 ## Deferred on purpose
 
-**M03 — SocketCAN abstraction layer.** There are two callers, and the protocol
-layers already contain no Linux dependency, which was the actual goal. Building
-the abstraction now would add indirection with no benefit. The trigger is a
-second backend, not tidiness.
+Nothing currently. M03 was deferred until multi-frame gave the ECU and the
+tester an identical non-trivial service loop, which was the trigger recorded in
+decision D2. It is now built.

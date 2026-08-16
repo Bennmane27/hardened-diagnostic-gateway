@@ -45,7 +45,7 @@ These are load-bearing. Violating one silently undoes the point of the project.
 
 ## 3. Current state
 
-**Last updated:** milestones M11–M18 complete (ISO-TP multi-frame + timers).
+**Last updated:** all planned milestones through M32 complete.
 
 ### Implemented
 
@@ -56,15 +56,21 @@ These are load-bearing. Violating one silently undoes the point of the project.
 | ISO-TP | SF, FF, CF, FC, reassembly, sequence numbers, `N_Bs` / `N_Cr` |
 | UDS | `0x10` DiagnosticSessionControl, `0x22` ReadDataByIdentifier, negative responses |
 | Virtual ECU | Simulated sensors + static identification, DID provider callback |
-| Tests | 4 suites, ASan + UBSan, 7493 checks |
+| UDS services | `0x10`, `0x11`, `0x14`, `0x19`, `0x22`, `0x27`, `0x3E` |
+| Access control | Session rules table, `S3server` expiry, security levels |
+| Fuzzing | In-process parser fuzzer + on-bus fault injector |
+| CI | Build, invariants, tests, fuzz, strict warnings, cppcheck, end-to-end on vcan0 |
+| Tests | 4 suites, ASan + UBSan, 14 733 checks |
 
-The VIN (17 bytes) is now readable end to end over a real multi-frame
-transfer — `10 14` / `30 00 00` / `21` / `22` observed on the bus.
+Measured: 2 000 000 fuzz cases, 12 994 183 ISO-TP frames, 0 anomalies.
+8 384 bytes of static state, 0 allocator symbols in the linked binaries.
+See `docs/results.md`.
 
-### Not yet implemented
+### Not implemented
 
-Session access rules, `TesterPresent`, `ECUReset`, DTCs, SecurityAccess,
-fuzzer, CI, static analysis, CAN FD, DoIP.
+`0x2E`, `0x31`, `0x34`/`0x36`/`0x37`, response-pending (`0x78`), functional
+addressing, SecurityAccess levels beyond 1, real cryptography, CAN FD, DoIP,
+cross-validation against the Linux kernel ISO-TP implementation.
 
 ---
 
@@ -131,6 +137,40 @@ A First Frame announcing more than the reassembly buffer gets a Flow
 Control with `FlowStatus = Overflow` and no memory is reserved. Silently
 dropping it would leave the sender waiting for its own timeout; trusting
 it would be the buffer overflow the project exists to prevent.
+
+### D12 — Two fuzzers, not one
+
+They answer different questions and neither replaces the other. The parser
+fuzzer drives the state machines in memory: millions of reproducible cases per
+campaign, under sanitizers, and it is what finds overflows and impossible
+states. The bus fuzzer emits real frames at a separate ECU process: far slower,
+but the only one exercising sockets, service loop and reassembly together.
+
+Both build plausible sequences and corrupt them at one point rather than
+emitting noise. A purely random PCI byte is rejected outright 15 times out of
+16, so pure noise would barely reach the reassembly code at all.
+
+### D13 — The fuzzer's success criterion is liveness, not rejection
+
+Every 25 attacks the bus fuzzer sends a perfectly valid request and requires the
+exact expected reply. "The ECU rejected the frame" proves nothing if the context
+stays broken afterwards — that is precisely the bug worth finding.
+
+### D14 — SecurityAccess ships with a deliberately weak, deliberately visible key
+
+The algorithm is three lines and published in `docs/security.md`. A more
+elaborate obfuscation would have been *worse*: it would look like security
+without being any. The valuable part — fresh seed per request, seed consumed by
+the first failure, replay refusal, lockout that also blocks seed requests,
+re-locking on session change and reset — is real and carries over unchanged to a
+proper HMAC-based derivation.
+
+### D15 — A rejected request does not refresh the session deadline
+
+Otherwise an attacker could hold a privileged session open indefinitely using
+requests it is not even allowed to make. Deadlines are also evaluated *before*
+the incoming request, so a request arriving too late cannot rescue the session
+it just missed.
 
 ### D5 — Makefile, not CMake
 
@@ -223,19 +263,28 @@ Status: `[x]` done · `[>]` in progress · `[ ]` not started
 [x] M16  Sequence error handling
 [x] M17  Timeout abstraction (injectable clock)
 [x] M18  Timeout tests (N_Bs, N_Cr)
-[ ] M06  UDS session access rules
-[ ] M07  TesterPresent + session timeout
-[ ] M09  ECUReset
-[ ] M10  DTC model, ReadDTCInformation, ClearDiagnosticInformation
-[ ] M20  SecurityAccess, demo algorithm
-[ ] M22  Brute-force protection
-[ ] M23  Targeted fault injector
-[ ] M24  Parser fuzzing
-[ ] M26  Sanitizers in CI
-[ ] M27  Static analysis
-[ ] M29  GitHub Actions
-[ ] M30  Measured metrics
-[ ] M32  Portability proof: protocol core built without Linux
+[x] M06  UDS session access rules
+[x] M07  TesterPresent + session timeout
+[x] M09  ECUReset
+[x] M10  DTC model, ReadDTCInformation, ClearDiagnosticInformation
+[x] M20  SecurityAccess, demo algorithm
+[x] M22  Brute-force protection
+[x] M23  Targeted fault injector
+[x] M24  Parser fuzzing
+[x] M26  Sanitizers in CI
+[x] M27  Static analysis (cppcheck in CI)
+[x] M29  GitHub Actions
+[x] M30  Measured metrics
+[x] M32  Portability proof: freestanding build, no external symbols
+
+--- suite possible, non planifiee ---
+
+[ ] M34  Cross-validation against the Linux kernel ISO-TP stack
+[ ] M35  Interactive tester REPL, then a recorded demo GIF
+[ ] M36  SecurityAccess with HMAC-SHA256 and a hardware RNG
+[ ] M37  libFuzzer / AFL++ harnesses over the parsers
+[ ] M38  CAN FD
+[ ] M39  STM32 + FreeRTOS port of src/platform
 ```
 
 ---
@@ -270,21 +319,30 @@ Reminders that would otherwise be rediscovered the hard way.
 ### Before any push
 
 ```bash
-make clean && make && make test && make check-portability
+make clean && make && make test && make check-portability && make fuzz
 ```
 
 Then verify each new commit individually with `git worktree` (**I7**).
 
 ### Documents still to write
 
+All written:
+
+| Path | Content |
+|---|---|
+| `docs/isotp.md` | Frame formats, both state machines, timers, error table |
+| `docs/uds.md` | Service table, NRC table, session matrix, message shapes |
+| `docs/security.md` | SecurityAccess design, threat model, what to replace |
+| `docs/testing.md` | Strategy, oracles, the exact-size buffer trick, how to add a suite |
+| `docs/results.md` | Measured metrics only, with the commands that produced them |
+| `docs/demo.md` | Reproducible five-act demo script |
+
+Still to write, when their subject exists:
+
 | Path | Purpose | Trigger |
 |---|---|---|
-| `docs/isotp.md` | Frame formats, state machines, timers, error table | when multi-frame lands |
-| `docs/uds.md` | Service table, NRC table, session matrix | when session rules land |
-| `docs/security.md` | SecurityAccess design, threat model, demo-key warning | when `0x27` lands |
-| `docs/testing.md` | Test strategy, oracles, how to add a suite | when the fuzzer lands |
-| `docs/results.md` | Measured metrics only — never estimated | when the fuzzer produces numbers |
-| `docs/demo.md` | Reproducible demo script | before recording the GIF |
+| `docs/canfd.md` | What changes for 64-byte frames | when CAN FD lands |
+| `docs/porting.md` | Step-by-step microcontroller port of `src/platform/` | when a second backend exists |
 
 ### Visual interface — decided direction
 

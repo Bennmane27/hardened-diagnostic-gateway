@@ -1,286 +1,284 @@
 # Hardened Diagnostic Gateway
 
-A hands-on embedded systems project building a deterministic and robust automotive diagnostic stack in C, from the ground up.
+An automotive diagnostic stack written from scratch in C — ISO-TP transport, a
+UDS server, a virtual ECU, a diagnostic tester and a fault injector — built to
+stay correct and bounded when the bus traffic is malformed, truncated, out of
+sequence or hostile.
 
-The protocol layers are written from scratch rather than pulled from existing ISO-TP or UDS libraries — implementing them is the point of the project. Development runs against a virtual CAN bus (Linux SocketCAN + `vcan`), with the explicit goal of keeping the protocol cores free of any Linux dependency so they can later be ported to a microcontroller.
+No ISO-TP or UDS library is used. Implementing those layers is the project.
+
+```
+14 733 unit checks · 2 000 000 fuzz cases · 12 994 183 ISO-TP frames
+0 failures · 0 sanitizer findings · 0 heap allocations
+```
+
+Every figure above was measured, with the commands that produced it, in
+[docs/results.md](docs/results.md).
+
+---
 
 ## The problem
 
 Sending a CAN frame is easy. The interesting question is different:
 
-> does the stack stay correct, bounded and predictable when the bus traffic becomes malformed, truncated, out of sequence or hostile?
+> does the stack stay correct, bounded and predictable when the traffic stops
+> being well-behaved?
 
-Modern vehicles are moving toward software-defined architectures — domain and zonal controllers, gateways, remote diagnostics, OTA updates — where a diagnostic endpoint is exposed to traffic it does not control. This project therefore treats every incoming frame as untrusted, and gives equal weight to correct rejection and correct service.
+Modern vehicles are moving toward software-defined architectures — domain and
+zonal controllers, gateways, remote diagnostics, OTA updates — where a
+diagnostic endpoint is exposed to traffic it does not control. This project
+treats every incoming byte as untrusted and gives correct *rejection* the same
+weight as correct service.
 
-## Current status
+A concrete example of what that means in practice. This frame announces seven
+payload bytes but carries two:
 
-### Milestone 0 — Development environment ✅
+```bash
+cansend vcan0 7E0#071003
+```
 
-Validated on Windows 11 using WSL 2 + Ubuntu: `can-utils` installed, `vcan0` virtual interface created, traffic verified with `cansend` and `candump`.
-
-### Milestone 1 — First CAN frame from C ✅
-
-A C program sends an 8-byte CAN frame on arbitration ID `0x7E0` through SocketCAN.
-
-### Milestone 2 — Virtual ECU and bidirectional exchange ✅
-
-A second program listens on the bus, filters requests on `0x7E0` and answers on `0x7E8`. The tester waits for and decodes that answer itself; `candump` is now only an independent observer.
-
-### Milestone 3 — ISO-TP Single Frame layer ✅
-
-The ISO-TP protocol control information is no longer decoded inline by the applications. `src/isotp/` owns the format and validates it.
-
-The decoder rejects, rather than trusts, the announced length:
-
-| Input | Result |
-|---|---|
-| `SF_DL = 0` | rejected — invalid per ISO 15765-2 |
-| `SF_DL = 8..15` | rejected — impossible in an 8-byte frame |
-| `SF_DL = 7` with `DLC = 3` | rejected — announced payload exceeds received data |
-| First / Consecutive / Flow Control frames | rejected — not yet supported |
-
-`isotp.c` includes no system header at all: it operates on raw byte buffers and a length, never on `struct can_frame`.
-
-### Milestone 4 — UDS server with negative responses ✅
-
-`src/uds/` implements a subset of ISO 14229-1. The ECU no longer decodes services inline.
-
-Supported today:
-
-- `0x10` DiagnosticSessionControl — default and extended sessions, with the `sessionParameterRecord` (P2Server_max, P2\*Server_max) in the positive response
-- `suppressPosRspMsgIndicationBit` (bit 7 of the sub-function): the positive response is withheld, negative responses are not
-- negative responses `7F <SID> <NRC>` for every unsupported service, unknown sub-function and incorrect message length
-
-Like the ISO-TP layer, `uds.c` includes no system header and knows nothing about its transport.
-
-### Milestone 5 — ReadDataByIdentifier and virtual ECU data ✅
-
-`0x22` ReadDataByIdentifier, plus a simulated data model in `src/ecu/ecu_data.c`: engine RPM, vehicle speed, coolant temperature, battery voltage, software version, serial number and VIN.
-
-The UDS server holds no vehicle data. The application registers a provider callback (`uds_set_did_provider`), so the same server could serve an engine controller or a braking controller unchanged — and the unit tests inject a fake provider instead of the real ECU.
-
-This milestone is also where the Single Frame limit becomes visible on purpose. A VIN is 17 bytes; the response would need 20 bytes against the 7 available. Rather than truncate silently, the server answers `7F 22 14` — *responseTooLong*, the NRC ISO 14229 defines for exactly this case: a transport limit surfacing as a protocol error.
+A parser that trusts the announced length reads five bytes that were never
+received. This one refuses the frame, says why, and keeps serving.
 
 ## Architecture
 
-```text
+```
         Diagnostic Tester                 Virtual ECU
               │                                ▲
               │ UDS                            │ UDS
               ▼                                │
         ┌───────────┐                    ┌───────────┐
-        │  src/uds  │                    │  src/uds  │
+        │  src/uds  │                    │  src/uds  │   sessions, security,
+        └─────┬─────┘                    └─────▲─────┘   services, DTCs
+              │                                │
+        ┌─────▼─────┐                    ┌─────┴─────┐   SF · FF · CF · FC
+        │ src/isotp │                    │ src/isotp │   reassembly, N_Bs, N_Cr
         └─────┬─────┘                    └─────▲─────┘
               │                                │
-        ┌─────▼─────┐                    ┌─────┴─────┐
-        │ src/isotp │                    │ src/isotp │
-        └─────┬─────┘                    └─────▲─────┘
-              │                                │
-        ┌─────▼─────┐                    ┌─────┴─────┐
-        │ SocketCAN │                    │ SocketCAN │
-        └─────┬─────┘                    └─────▲─────┘
-              │                                │
-              └────────────► vcan0 ────────────┘
+        ┌─────▼──────────────────────────────┴─────┐
+        │            src/platform                  │   raw CAN socket,
+        │      can_socket  ·  diag_link            │   session loop, clock
+        └─────────────────────┬────────────────────┘
+                              │
+                            vcan0
 ```
 
-`src/isotp` and `src/uds` include only `<stdint.h>` and `<stddef.h>`. Everything Linux-specific lives in the two application files.
+`src/isotp/` and `src/uds/` include **no system header** — not even `<string.h>`.
+They work on raw byte buffers and are handed the current time as a parameter.
+Verified mechanically: they compile `-ffreestanding -nostdinc` and link with no
+external symbol beyond their own functions. Porting to a microcontroller means
+rewriting `src/platform/`, and nothing else.
 
-## Layout
-
-```text
-├── Makefile
+```
 ├── src/
-│   ├── isotp/{isotp.c, isotp.h}       ISO-TP transport, Single Frame
-│   ├── uds/{uds.c, uds.h}             UDS server, subset of ISO 14229-1
-│   ├── ecu/
-│   │   ├── ecu.c                      virtual ECU (SocketCAN)
-│   │   └── ecu_data.{c,h}             simulated sensors and identifiers
-│   └── tester/tester.c                diagnostic client (SocketCAN)
-└── tests/
-    ├── test_isotp.c
-    ├── test_uds.c
-    └── test_ecu_data.c
+│   ├── isotp/          ISO-TP transport, no OS dependency
+│   ├── uds/            UDS server, no OS dependency
+│   ├── ecu/            virtual ECU: sensors, identifiers, fault memory
+│   ├── tester/         diagnostic client
+│   └── platform/       the only Linux-dependent code
+├── tests/              4 suites, ASan + UBSan
+├── fuzz/               in-process parser fuzzer
+├── tools/fuzzer/       on-bus fault injector
+└── docs/
 ```
 
-Only `ecu.c` and `tester.c` include Linux headers. Everything else is plain C over byte buffers.
+## What it does
 
-## Setting up the virtual CAN bus
+### ISO-TP — [full documentation](docs/isotp.md)
+
+Single Frame, First Frame, Consecutive Frame, Flow Control, reassembly,
+sequence-number checking, `N_Bs` and `N_Cr` timers, explicit state machines for
+both directions.
+
+Rejects, rather than trusts: `SF_DL` of 0 or above 7, a First Frame announcing
+fewer than 8 bytes, an announced length exceeding the received DLC, a message
+larger than the reassembly buffer (answered with `FlowStatus = Overflow`, not
+silently dropped), consecutive frames with no transfer open, sequence numbers
+that skip, and frame types 4–15 that do not exist.
+
+### UDS — [full documentation](docs/uds.md)
+
+| SID | Service | Extended session? | Unlock? |
+|---|---|:---:|:---:|
+| `0x10` | DiagnosticSessionControl | no | no |
+| `0x11` | ECUReset | yes | yes |
+| `0x14` | ClearDiagnosticInformation | yes | no |
+| `0x19` | ReadDTCInformation | no | no |
+| `0x22` | ReadDataByIdentifier | no | no |
+| `0x27` | SecurityAccess | yes | no |
+| `0x3E` | TesterPresent | no | no |
+
+That table is not a description of the code — it *is* the code. The access
+rules live in one table that runs before any handler, so a service added
+without a rule is refused by default.
+
+Plus proper `7F <SID> <NRC>` negative responses, the
+`suppressPosRspMsgIndicationBit` (which silences positive replies only — an
+error must always reach the client), and `S3server` session expiry that
+re-locks security on its own.
+
+### SecurityAccess — [full documentation](docs/security.md)
+
+Seed/key exchange with a fresh seed per request, the seed consumed by the first
+wrong key, replay refused, and a lockout after three failures that also refuses
+new seed requests.
+
+> The key derivation is a **demonstration and protects nothing** — the
+> algorithm is public in this repository. What is implemented is the state
+> handling around it, which is the part that carries over to a real design.
+> [docs/security.md](docs/security.md) says exactly what to replace and why.
+
+## Try it
 
 ```bash
 sudo modprobe vcan
 sudo ip link add dev vcan0 type vcan
 sudo ip link set up vcan0
+
+make
 ```
 
-Check it:
+Terminal 1: `./build/ecu` — Terminal 2: `./build/tester` — Terminal 3:
+`candump vcan0`
+
+A 19-step scenario runs. Three moments worth watching.
+
+**A VIN is 17 bytes and a CAN frame holds 8**, so the transport earns its keep:
+
+```
+7E0  03 22 F1 90 ...          request
+7E8  10 14 62 F1 90 56 46 31  First Frame, 0x014 = 20 bytes announced
+7E0  30 00 00 ...             Flow Control, ContinueToSend
+7E8  21 48 44 47 32 41 58 34  Consecutive Frame, sequence 1
+7E8  22 37 31 32 39 33 30 35  Consecutive Frame, sequence 2
+```
+
+**A protected command is refused twice, for two different reasons.** From the
+default session the session check stops it; once the session is open the
+security check takes over. The changing NRC is the point:
+
+```
+[2]  ECUReset, default session   -> REFUS  NRC 0x7F  serviceNotSupportedInActiveSession
+[8]  ECUReset, extended, locked  -> REFUS  NRC 0x33  securityAccessDenied
+```
+
+**A captured key is worthless.** After a successful unlock, replaying the very
+same key immediately fails — the seed that justified it is gone:
+
+```
+[12] SecurityAccess, correct key -> OK     ACCES DEVERROUILLE
+[13] SecurityAccess, replayed    -> REFUS  NRC 0x22  conditionsNotCorrect
+```
+
+Full walk-through: [docs/demo.md](docs/demo.md).
+
+## Break it
 
 ```bash
-candump vcan0 &
-cansend vcan0 123#1122334455667788
+./build/ecu -q &
+./build/fuzz_bus 200 0xBADC0DE
 ```
 
-## Build
+Eleven targeted scenarios rather than random noise — a purely random first byte
+is rejected outright 15 times out of 16, so each scenario builds a plausible
+sequence and corrupts it at one point: wrong sequence numbers, missing
+consecutive frames, 4 GB length announcements, orphan frames, interleaved
+transfers, keys with no seed, resets with no unlock.
+
+```
+     200 attaques ... ECU toujours operationnel
+  sondes de vitalite     : 10
+  sondes reussies        : 10
+  ECUReset non autorises : 0
+```
+
+The line that matters is `sondes reussies`. Every 25 attacks the fuzzer sends a
+perfectly valid request and requires the exact expected reply — because
+rejecting an attack proves nothing if the context stays broken afterwards.
+
+At scale, in memory, under sanitizers:
 
 ```bash
-make          # build/ecu and build/tester
-make test     # unit tests, built with ASan + UBSan
-make clean
+./build/fuzz_parser 2000000 0x5EED1
 ```
 
-Builds with `-Wall -Wextra` and produces no warnings.
+```
+  trames ISO-TP          : 12994183
+  erreurs de sequence    : 988290
+  debordements refuses   : 268
+  delais expires         : 181926
+  ANOMALIES              : 0
+```
 
-## Run
-
-Terminal 1:
+## Verify it
 
 ```bash
-./build/ecu
+make test               # 14 733 checks, ASan + UBSan
+make fuzz               # parser fuzzing campaign
+make check-portability  # architecture invariants
 ```
 
-Terminal 2:
+`check-portability` fails the build if a system header reaches the protocol
+layers, if anything under `src/` calls the allocator, if the protocol layers
+stop compiling freestanding or under `-Wconversion -Wshadow -Werror`, or if
+`nm` finds an allocator symbol in a linked binary. An invariant nobody verifies
+is a comment, not a constraint.
 
-```bash
-./build/tester
-```
+Two suites are exhaustive rather than sampled: the ISO-TP decoder is swept over
+all 256 PCI values × 9 frame lengths, and the UDS server over 256 SIDs × 4
+sub-functions × 7 request lengths. Frames are decoded in heap buffers sized to
+the *exact* announced DLC, so under AddressSanitizer a single byte read past the
+end aborts the run — which is what turns "the parser looks safe" into a checked
+property. More in [docs/testing.md](docs/testing.md).
 
-Terminal 3 (optional, independent observer):
-
-```bash
-candump vcan0
-```
-
-### What the tester does
-
-It runs a diagnostic session end to end — open an extended session, read identification and live data, then deliberately hit three rejection paths:
-
-```text
-=== Tester de diagnostic ===
-
-[1] DiagnosticSessionControl -> Extended
-  TX 7E0 : 02 10 03 00 00 00 00 00
-  RX 7E8 : 06 50 03 00 32 01 F4 00
-  -> OK     session active : Extended Diagnostic Session
-            P2Server_max 50 ms, P2*Server_max 5000 ms
-
-[2] ReadDataByIdentifier -> version logicielle
-  TX 7E0 : 03 22 F1 89 00 00 00 00
-  RX 7E8 : 06 62 F1 89 01 04 02 00
-  -> OK     DID 0xF189 (ECU software version) = 01 04 02
-
-[4] ReadDataByIdentifier -> regime moteur
-  TX 7E0 : 03 22 01 00 00 00 00 00
-  RX 7E8 : 05 62 01 00 05 44 00 00
-  -> OK     DID 0x0100 (engine RPM) = 05 44  = 1348 tr/min
-
-[6] ReadDataByIdentifier -> tension batterie
-  RX 7E8 : 05 62 01 03 30 4E 00 00
-  -> OK     DID 0x0103 (battery voltage) = 30 4E  = 12.366 V
-
-[7] ReadDataByIdentifier -> VIN (17 octets : ne tient pas en Single Frame)
-  TX 7E0 : 03 22 F1 90 00 00 00 00
-  RX 7E8 : 03 7F 22 14 00 00 00 00
-  -> REFUS  service 0x22, NRC 0x14 (responseTooLong)
-
-[8] ReadDataByIdentifier -> identifiant inconnu
-  RX 7E8 : 03 7F 22 31 00 00 00 00
-  -> REFUS  service 0x22, NRC 0x31 (requestOutOfRange)
-
-[9] Service inexistant 0x99
-  RX 7E8 : 03 7F 99 11 00 00 00 00
-  -> REFUS  service 0x99, NRC 0x11 (serviceNotSupported)
-```
-
-Reading the first exchange byte by byte:
-
-```text
-02        ISO-TP Single Frame, 2 bytes of payload
-10 03     DiagnosticSessionControl -> extended session
-
-06        ISO-TP Single Frame, 6 bytes of payload
-50 03     positive response (0x10 + 0x40), extended session
-00 32     P2Server_max  = 50 ms
-01 F4     P2*Server_max = 500 x 10 ms = 5000 ms
-```
-
-### Injecting malformed traffic by hand
-
-```bash
-cansend vcan0 7E0#071003               # SF_DL says 7 bytes, DLC carries 2
-cansend vcan0 7E0#0F1003               # SF_DL = 15, impossible
-cansend vcan0 7E0#1008100300000000     # First Frame, not supported yet
-cansend vcan0 7E0#0210420000000000     # unknown sub-function
-cansend vcan0 7E0#0110000000000000     # 0x10 with no sub-function
-cansend vcan0 7E0#0210830000000000     # suppressPosRspMsgIndicationBit
-```
-
-Observed on the bus:
-
-```text
-7E0  [3]  07 10 03   ->   (no response, ISO-TP rejects: truncated frame)
-7E0  [3]  0F 10 03   ->   (no response, ISO-TP rejects: invalid length)
-7E0  [8]  10 08 ...  ->   (no response, ISO-TP rejects: unsupported type)
-7E0  [8]  02 10 42   ->   7E8  [8]  03 7F 10 12 ...   subFunctionNotSupported
-7E0  [8]  01 10 00   ->   7E8  [8]  03 7F 10 13 ...   incorrectMessageLength
-7E0  [8]  02 10 83   ->   (no response, as requested)
-```
-
-## Tests
-
-```bash
-make test
-```
-
-Both suites are compiled with AddressSanitizer and UndefinedBehaviorSanitizer.
-
-**ISO-TP — 2480 checks.** The decoder is swept over all 256 possible PCI values crossed with all 9 possible frame lengths, and compared against a reference classifier written independently from the implementation so the oracle cannot inherit the same bug. Each frame is passed in a heap buffer allocated to the *exact* announced DLC, so any read past the end of the received data aborts the run under ASan. Also covers NULL arguments, encoder limits, padding and encode/decode round-trips.
-
-**UDS — 64 checks.** Focused on rejection paths: every non-implemented SID, invalid sub-functions, wrong request lengths, the suppress-positive-response bit, NULL arguments and undersized response buffers. `0x22` is tested against an injected fake DID provider rather than the real ECU, which is what the callback decoupling buys.
-
-**ECU data — 32 checks.** Determinism of the simulated values, big-endian encoding, sign preservation on negative temperatures, and a sweep of every identifier against every buffer capacity from 0 to 20 bytes to confirm nothing is ever written past the space provided.
-
-Current result: **2576 checks, 0 failures, no sanitizer findings.**
-
-### Fault injection
-
-Malformed frames injected on the live bus with `cansend` — truncated ISO-TP frames, invalid `SF_DL`, unsupported frame types, unknown services, wrong lengths. The ECU process stayed alive throughout, emitted a response only where the protocol requires one, and logged an explicit reason for every rejection.
+CI runs all of it plus `cppcheck` and an end-to-end job on a real `vcan0`.
 
 ## Design constraints
 
-- no dynamic allocation in the protocol layers — all buffers belong to the caller
-- no global state; the UDS server carries an explicit context
-- every public function returns an explicit status code
-- fixed-width integer types, named constants instead of magic numbers
-- bounded operations: a Single Frame payload is at most 7 bytes
+- No dynamic allocation anywhere in `src/` — verified in the linked binaries,
+  not just the sources. Total static state held by the ECU: 8 384 bytes.
+- The protocol layers never read a clock; time arrives as a parameter. Timer
+  tests advance it by hand and finish instantly, and a microcontroller port
+  needs no POSIX clock.
+- Elapsed time uses unsigned subtraction, correct across the 32-bit millisecond
+  wrap at 49 days. There is a test that drives the clock across it.
+- Buffer capacity is checked *before* every write, never after.
+- Multi-byte protocol values are encoded byte by byte, big endian — never
+  `memcpy` of a `uint16_t`, which would silently emit little-endian bytes on
+  x86 and break elsewhere.
+- Simulated ECU data evolves from a tick counter, never `rand()`, so demos and
+  tests are reproducible.
+- Every commit builds and passes its tests on its own, so `git bisect` works.
 
 ## Current limitations
 
-Stated explicitly rather than glossed over:
+Stated plainly rather than glossed over.
 
-- ISO-TP: Single Frame only. No First Frame, Consecutive Frame or Flow Control, so messages are capped at 7 bytes of payload — which is why the VIN cannot be read yet.
-- No ISO-TP timers — none of `N_As`, `N_Ar`, `N_Bs`, `N_Br`, `N_Cs`, `N_Cr` are implemented. The tester has a socket receive timeout, nothing more.
-- UDS: two services (`0x10`, `0x22`). `0x22` accepts a single identifier per request, not the list the standard allows.
-- Sessions are tracked but do not gate anything yet: no service is restricted to a session, and there is no session timeout or `TesterPresent`.
-- No SecurityAccess, no DTCs.
-- The ECU accepts requests on `0x7E0` without masking the CAN ID flag bits.
-- Classic CAN only; CAN FD is out of scope for now.
-- Not cross-validated against the Linux kernel ISO-TP implementation yet.
+- ISO-TP: normal addressing only. `N_As`, `N_Ar`, `N_Br`, `N_Cs` are not
+  implemented.
+- UDS: seven services. `0x22` takes one identifier per request, not the list the
+  standard allows. No response-pending (`0x78`), no functional addressing.
+- SecurityAccess: level 1 only, with a demonstration key algorithm.
+- Classic CAN only. No CAN FD, no DoIP.
+- **Not cross-validated against the Linux kernel ISO-TP implementation.** This
+  is the most valuable test still missing: it is what would catch a stack that
+  works only because both ends share the same misunderstanding.
+- No coverage measurement, no latency benchmarks.
 
-## Roadmap
-
-| Next | Then | Later |
-|---|---|---|
-| ISO-TP First Frame + Flow Control | Session-based access rules | SecurityAccess (`0x27`) |
-| Consecutive Frames + reassembly | `0x3E` TesterPresent + session timeout | Fault injector / fuzzer |
-| Read the VIN in multiple frames | DTC model (`0x19`, `0x14`) | libFuzzer / AFL++ on the parsers |
-| Sequence-error handling | Timeout abstraction | CI, static analysis, metrics |
-| | Cross-validation vs Linux ISO-TP | CAN FD, STM32 + FreeRTOS port |
-
-Multi-frame moves to the front because `0x22` just proved the need for it concretely: the VIN is unreadable until ISO-TP can span several frames.
+[docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md) records the invariants, the
+decision log and the backlog. [ROADMAP.md](ROADMAP.md) tracks milestones.
 
 ## A note on standards
 
-This is an ISO-TP implementation *targeting* ISO 15765-2 behavior and a UDS server implementing a *subset* of ISO 14229-1. Neither is a conformance-tested implementation, and no claim of full compliance is made. The protocol details here follow widely published descriptions of both standards; they have not been checked against the paid standard documents.
+This is an ISO-TP implementation *targeting* ISO 15765-2 behavior and a UDS
+server implementing a *subset* of ISO 14229-1. Neither has been through a
+conformance test suite, and no claim of compliance is made. The protocol
+details follow widely published descriptions of both standards; they have not
+been checked against the paid standard documents.
 
-Likewise the code is written in a MISRA-oriented style — fixed-width types, no dynamic allocation, explicit error handling, short functions — but no MISRA conformance analysis has been run.
+The code is written in a MISRA-oriented style — fixed-width types, no dynamic
+allocation, explicit error handling, short functions — but no MISRA conformance
+analysis has been run.
 
-The stack is fuzz-tested and stress-tested against malformed traffic. That is evidence of robustness, not proof of correctness.
+The stack is fuzz-tested and stress-tested against malformed traffic. That is
+evidence of robustness, not proof of correctness.
