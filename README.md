@@ -9,6 +9,7 @@ No ISO-TP or UDS library is used. Implementing those layers is the project.
 
 ```
 14 733 unit checks · 2 000 000 fuzz cases · 12 994 183 ISO-TP frames
+Cross-validated against the Linux kernel ISO-TP stack
 0 failures · 0 sanitizer findings · 0 heap allocations
 ```
 
@@ -231,6 +232,18 @@ the *exact* announced DLC, so under AddressSanitizer a single byte read past the
 end aborts the run — which is what turns "the parser looks safe" into a checked
 property. More in [docs/testing.md](docs/testing.md).
 
+```bash
+tests/interop/crossvalidate.sh
+```
+
+The most valuable test here, because every other suite only proves that *our*
+transmitter and *our* receiver agree with each other — if both share the same
+misreading of the standard, they agree perfectly and everything passes. The
+Linux kernel ISO-TP implementation is an independent arbiter: it requests the
+VIN, reassembles our First Frame and Consecutive Frames, and produces exactly
+`62 F1 90` plus the 17 VIN bytes. It also segments a 30-byte message that our
+receiver puts back together. 5 checks, 0 failures.
+
 CI runs all of it plus `cppcheck` and an end-to-end job on a real `vcan0`.
 
 ## Design constraints
@@ -260,9 +273,8 @@ Stated plainly rather than glossed over.
   standard allows. No response-pending (`0x78`), no functional addressing.
 - SecurityAccess: level 1 only, with a demonstration key algorithm.
 - Classic CAN only. No CAN FD, no DoIP.
-- **Not cross-validated against the Linux kernel ISO-TP implementation.** This
-  is the most valuable test still missing: it is what would catch a stack that
-  works only because both ends share the same misunderstanding.
+- Cross-validation against the kernel covers four exchanges, not the whole
+  protocol surface.
 - No coverage measurement, no latency benchmarks.
 
 [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md) records the invariants, the

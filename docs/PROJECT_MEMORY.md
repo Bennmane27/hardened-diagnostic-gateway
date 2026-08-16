@@ -59,6 +59,7 @@ These are load-bearing. Violating one silently undoes the point of the project.
 | UDS services | `0x10`, `0x11`, `0x14`, `0x19`, `0x22`, `0x27`, `0x3E` |
 | Access control | Session rules table, `S3server` expiry, security levels |
 | Fuzzing | In-process parser fuzzer + on-bus fault injector |
+| Interop | Cross-validated against the Linux kernel ISO-TP stack |
 | CI | Build, invariants, tests, fuzz, strict warnings, cppcheck, end-to-end on vcan0 |
 | Tests | 4 suites, ASan + UBSan, 14 733 checks |
 
@@ -69,8 +70,7 @@ See `docs/results.md`.
 ### Not implemented
 
 `0x2E`, `0x31`, `0x34`/`0x36`/`0x37`, response-pending (`0x78`), functional
-addressing, SecurityAccess levels beyond 1, real cryptography, CAN FD, DoIP,
-cross-validation against the Linux kernel ISO-TP implementation.
+addressing, SecurityAccess levels beyond 1, real cryptography, CAN FD, DoIP.
 
 ---
 
@@ -171,6 +171,18 @@ Otherwise an attacker could hold a privileged session open indefinitely using
 requests it is not even allowed to make. Deadlines are also evaluated *before*
 the incoming request, so a request arriving too late cannot rescue the session
 it just missed.
+
+### D16 — The kernel ISO-TP stack is the project's only external oracle
+
+`tests/interop/crossvalidate.sh` drives `isotpsend` / `isotprecv` against our
+ECU. It is the only test that can catch a transmitter and a receiver agreeing
+because they share the same misreading of the standard — the failure mode every
+self-contained suite is structurally blind to.
+
+The `can-isotp` kernel module autoloads on socket creation, so the script needs
+no privileged setup beyond `vcan0` itself. It self-tests the environment with a
+kernel-to-kernel round trip first, so a failure points at our stack rather than
+at a missing module.
 
 ### D5 — Makefile, not CMake
 
@@ -279,7 +291,7 @@ Status: `[x]` done · `[>]` in progress · `[ ]` not started
 
 --- suite possible, non planifiee ---
 
-[ ] M34  Cross-validation against the Linux kernel ISO-TP stack
+[x] M34  Cross-validation against the Linux kernel ISO-TP stack
 [ ] M35  Interactive tester REPL, then a recorded demo GIF
 [ ] M36  SecurityAccess with HMAC-SHA256 and a hardware RNG
 [ ] M37  libFuzzer / AFL++ harnesses over the parsers

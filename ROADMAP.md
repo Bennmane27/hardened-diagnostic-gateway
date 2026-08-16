@@ -20,12 +20,12 @@ Status of each milestone. The detailed rationale behind every decision lives in
 | M26–M27 | Sanitizers and static analysis in CI |
 | M29–M30 | GitHub Actions, measured metrics |
 | M32 | Portability proof: protocol layers build freestanding, no external symbols |
+| M34 | Cross-validation against the Linux kernel ISO-TP stack |
 
 ## Not planned yet
 
 | # | Milestone | Why it would matter |
 |---|---|---|
-| M34 | Cross-validation against the Linux kernel ISO-TP stack | The most valuable test still missing: it catches a stack that works only because both ends share the same misunderstanding |
 | M35 | Interactive tester REPL, then a recorded demo GIF | Turns the demo into something watchable without a terminal |
 | M36 | `SecurityAccess` with HMAC-SHA256 and a hardware RNG | Replaces the demonstration key algorithm with a real one |
 | M37 | libFuzzer / AFL++ harnesses over the parsers | Coverage-guided fuzzing finds what a hand-rolled generator misses |

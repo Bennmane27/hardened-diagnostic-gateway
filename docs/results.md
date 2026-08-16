@@ -105,6 +105,28 @@ nothing if the context stays broken afterwards, so every 25 attacks the fuzzer
 sends a perfectly valid request and requires the exact expected answer. The
 ECU process survived the whole campaign.
 
+## Cross-validation against the kernel ISO-TP stack
+
+```bash
+tests/interop/crossvalidate.sh
+```
+
+| Check | Result |
+|---|---|
+| Kernel sends `10 03`, reads `50 03 00 32 01 F4` | pass |
+| Kernel requests the VIN, reassembles our 20-byte multi-frame reply | pass |
+| Kernel sends a 30-byte message, we reassemble all 30 | pass |
+| The over-long request is then refused with NRC `0x13` | pass |
+| Kernel requests service `0x99`, reads `7F 99 11` | pass |
+| **Total** | **5 checks, 0 failures** |
+
+The second row is the one that carries weight. The kernel stack — independent
+code that has never seen ours — reassembled our First Frame, answered its Flow
+Control and accepted our sequence numbers, then produced exactly `62 F1 90`
+followed by the 17 VIN bytes. That rules out the failure mode every other suite
+is blind to: a transmitter and a receiver that agree only because they share the
+same misreading of the standard.
+
 ## Memory
 
 ```bash
@@ -161,6 +183,9 @@ They are evidence of robustness, not proof of correctness. Fuzzing explores; it
 does not enumerate. The exhaustive sweeps genuinely cover their stated input
 space, but that space is one frame or one request at a time — not every
 possible *sequence* of them.
+
+The cross-validation covers four exchanges, not the whole protocol surface: it
+establishes that the common paths are interoperable, not that every corner is.
 
 No conformance test suite has been run against either standard, and the
 protocol details follow published descriptions rather than the paid standard

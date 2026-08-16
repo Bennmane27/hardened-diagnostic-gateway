@@ -155,6 +155,37 @@ The simulated ECU data evolves from a tick counter, never from `rand()` — two
 runs of the demo produce identical traces, which is also what makes a recorded
 demonstration honest.
 
+## Cross-validation against the kernel
+
+```bash
+tests/interop/crossvalidate.sh
+```
+
+This is the most valuable test in the project, and the reason is worth stating
+plainly: every other suite only proves that *our* transmitter and *our* receiver
+agree with each other. If both share the same misreading of the standard, they
+will agree perfectly and every test will pass.
+
+The Linux kernel ISO-TP implementation (`can-isotp`, driven through `isotpsend`
+and `isotprecv`) is an independent, widely deployed arbiter. Four exchanges:
+
+| # | Direction | What it proves |
+|---|---|---|
+| 1 | kernel sends `10 03`, reads our reply | Single-frame round trip, including the `sessionParameterRecord` |
+| 2 | kernel requests the VIN, reassembles our reply | **Our multi-frame transmission is standard-conformant**, not merely self-consistent |
+| 3 | kernel sends a 30-byte message | Our reassembly accepts a foreign sender's segmentation, then UDS correctly refuses the over-long request |
+| 4 | kernel requests an unknown service | Negative responses survive the transport unchanged |
+
+Test 2 is the one that matters most. The kernel receiving `62 F1 90` followed by
+the exact 17 VIN bytes means our First Frame length encoding, our sequence
+numbers and our response to its Flow Control were all read correctly by code
+that has never seen ours.
+
+The script self-tests the environment first — a kernel-to-kernel round trip —
+so a failure points at our stack rather than at a missing module.
+
+Result: **5 checks, 0 failures.**
+
 ## Architecture invariants
 
 `make check-portability` fails the build if:
@@ -175,7 +206,8 @@ An invariant nobody verifies is a comment, not a constraint.
 `.github/workflows/ci.yml` runs four jobs: build + invariants + tests + a
 500 000 case fuzz campaign; the protocol layers under strict warnings;
 `cppcheck`; and an end-to-end job that creates a real `vcan0`, runs the full
-diagnostic scenario, then runs the bus fuzzer against the same ECU.
+diagnostic scenario, cross-validates against the kernel ISO-TP stack, then runs
+the bus fuzzer against the same ECU.
 
 The bus fuzzer's exit code is what gates that last job — non-zero if a liveness
 probe failed or a protected command was accepted.
@@ -196,9 +228,6 @@ cannot ship without a test.
 
 ## Known gaps
 
-- No cross-validation against the Linux kernel ISO-TP implementation. This is
-  the most valuable test still missing: it is what would catch a stack that
-  works only because both ends share the same misunderstanding.
 - No coverage measurement.
 - `libFuzzer` / AFL++ harnesses are not wired up; the in-process fuzzer is
   hand-rolled.

@@ -101,6 +101,16 @@ jobs:
           sleep 1
           kill $ECU_PID || true
 
+      # Le test le plus precieux du projet : nos tests unitaires
+      # prouvent seulement que notre emetteur et notre recepteur se
+      # comprennent. S'ils partagent la meme erreur d'interpretation,
+      # ils se comprendront parfaitement. La pile du noyau est un
+      # arbitre independant.
+      - name: Cross-validation against the kernel ISO-TP stack
+        run: |
+          sudo modprobe can-isotp
+          ./tests/interop/crossvalidate.sh
+
       - name: Fault injection campaign
         run: |
           ./build/ecu -q &
