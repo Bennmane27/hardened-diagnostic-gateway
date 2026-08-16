@@ -39,13 +39,18 @@ reproducible experiment.
 | M52 | Invariant engine: evaluate, verdict ALLOW / DROP / RECOVER | |
 | M53 | In-line CAN gateway, transparent on the nominal path | |
 | M54 | RECOVER: post-violation resynchronization, availability restored | |
-| M55 | Adversarial state-space fuzzer + delta-debug minimizer | |
+| M55 | Adversarial state-space explorer + delta-debug minimizer | **partial** — UDS-level explorer (`fuzz/ahdg_explore.c`) live; found AHDG-0001 |
 | M56 | Frozen counterexample corpus + exact replay | |
 | M57 | Benchmark harness S0 (ECU) / S1 (firewall) / S2 (gateway) | |
 | M58 | STM32 + FDCAN port, measured latency | |
 | M59 | One-command reproduction + CI gate on blocked-attack count | |
 | M60 | Prior-art review — hard gate on the novelty claim | |
 | M61 | Write-up: threat model, invariants, discovery, results | |
+
+First experimental finding: [docs/findings/AHDG-0001.md](docs/findings/AHDG-0001.md)
+— a cross-layer state confusion in the real UDS server, discovered automatically,
+minimized to four actions, fixed, regressed, and re-attacked clean over 2,000,000
+sequences. The research loop, demonstrated on real code.
 
 The designation the project earns on completion, and the exact wording allowed
 at each stage, are defined in [docs/RESEARCH.md](docs/RESEARCH.md) §10 and

@@ -29,6 +29,12 @@ jobs:
       - name: Parser fuzzing campaign
         run: ./build/fuzz_parser 500000 0xC0FFEE
 
+      # L'adversaire AHDG attaque le vrai serveur UDS. Un contre-exemple non
+      # couvert par une regression fait echouer la CI : c'est le garde-fou
+      # qui empeche une regression de securite de passer inapercue.
+      - name: Adversarial state-space exploration
+        run: ./build/ahdg_explore 500000 0xA11CE
+
   strict-warnings:
     name: Strict warnings
     runs-on: ubuntu-latest

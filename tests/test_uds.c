@@ -746,6 +746,48 @@ static void test_security_access(void)
         check(resp[2] == UDS_NRC_SUB_FUNCTION_NOT_SUPPORTED,
               "niveau de securite inconnu refuse");
     }
+
+    /*
+     * --- Regression AHDG-0001 : reverrouillage sur retour en session
+     *     par defaut ---
+     *
+     * Contre-exemple minimal decouvert par l'explorateur adversarial
+     * (fuzz/ahdg_explore.c), invariant SEC-4 :
+     *   10 03 (extended) -> 27 01 (seed) -> 27 02 (cle correcte) -> 10 01
+     * laissait la securite DEVERROUILLEE en session PAR DEFAUT, un etat
+     * interdit. Voir docs/findings/AHDG-0001.md.
+     *
+     * Bloc autonome : contexte neuf, deverrouillage complet, puis retour
+     * en session par defaut, qui doit reverrouiller.
+     */
+    {
+        uint8_t r[UDS_MAX_RESPONSE_SIZE];
+        uint16_t rl = 0u;
+        uint32_t sd;
+        uint32_t k;
+        uint8_t kr[6];
+        const uint8_t seed_req[] = { 0x27, 0x01 };
+        const uint8_t to_default[] = { 0x10, 0x01 };
+
+        uds_init(&ctx);
+        open_extended(&ctx, 0u);
+        (void)uds_handle_request(&ctx, seed_req, 2, 0u, r, sizeof(r), &rl);
+        sd = (((uint32_t)r[2]) << 24) | (((uint32_t)r[3]) << 16) |
+             (((uint32_t)r[4]) << 8) | ((uint32_t)r[5]);
+        k = uds_demo_key_from_seed(sd);
+        kr[0] = 0x27; kr[1] = 0x02;
+        kr[2] = (uint8_t)(k >> 24); kr[3] = (uint8_t)(k >> 16);
+        kr[4] = (uint8_t)(k >> 8);  kr[5] = (uint8_t)k;
+        (void)uds_handle_request(&ctx, kr, 6, 0u, r, sizeof(r), &rl);
+        check(ctx.security_level == UDS_SECURITY_LEVEL_1,
+              "AHDG-0001 : deverrouille apres cle correcte");
+
+        (void)uds_handle_request(&ctx, to_default, 2, 0u, r, sizeof(r), &rl);
+        check(ctx.session == UDS_SESSION_DEFAULT, "session par defaut");
+        check(ctx.security_level == UDS_SECURITY_LOCKED,
+              "AHDG-0001 : securite reverrouillee en session par defaut");
+        check(ctx.seed_pending == 0u, "AHDG-0001 : aucune graine residuelle");
+    }
 }
 
 /* ------------------------------------------------------------------ */

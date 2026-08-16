@@ -5,6 +5,7 @@
 #   make                     -> construit ecu, tester, fuzz_bus, fuzz_parser
 #   make test                -> tests unitaires (ASan + UBSan)
 #   make fuzz                -> campagne de fuzzing des analyseurs
+#   make explore             -> exploration adversariale des invariants UDS
 #   make demo                -> rejoue et reenregistre la demonstration
 #   make web                 -> console web sur http://127.0.0.1:8800
 #   make setup               -> rappelle comment rendre vcan0 permanente
@@ -16,7 +17,7 @@
 # struct ifreq (definie dans net/if.h sous __USE_MISC).
 
 CC      := gcc
-INCLUDES := -Isrc/isotp -Isrc/uds -Isrc/ecu -Isrc/platform -Isrc/platform/socketcan
+INCLUDES := -Isrc/isotp -Isrc/uds -Isrc/ecu -Isrc/gateway -Isrc/platform -Isrc/platform/socketcan
 CFLAGS  := -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE $(INCLUDES)
 BUILD   := build
 
@@ -35,7 +36,7 @@ HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
 TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
 all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli \
-     $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser
+     $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser $(BUILD)/ahdg_explore
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
@@ -78,6 +79,16 @@ $(BUILD)/fuzz_parser: fuzz/fuzz_parser.c $(ISOTP) $(UDS) $(HEADERS) | $(BUILD)
 # Pour une campagne longue : ./build/fuzz_parser 5000000 0x1234
 fuzz: $(BUILD)/fuzz_parser
 	./$(BUILD)/fuzz_parser 200000 0xC0FFEE
+
+$(BUILD)/ahdg_explore: fuzz/ahdg_explore.c $(UDS) src/uds/uds.h \
+                      src/gateway/invariants.h | $(BUILD)
+	$(CC) $(TEST_CFLAGS) fuzz/ahdg_explore.c $(UDS) -o $@
+
+# Explorateur adversarial de l'espace d'etats UDS. Code de sortie non nul
+# si un contre-exemple non couvert par une regression apparait : la CI en
+# fait un critere de reussite.
+explore: $(BUILD)/ahdg_explore
+	./$(BUILD)/ahdg_explore 500000 0xA11CE
 
 # Rejoue la demonstration, la reenregistre et regenere le SVG anime du
 # README. Necessite asciinema.
@@ -162,4 +173,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz demo web setup check-portability clean
+.PHONY: all test fuzz explore demo web setup check-portability clean

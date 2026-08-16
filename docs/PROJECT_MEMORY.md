@@ -253,6 +253,25 @@ violation found by one would be invisible to another. IDs are append-only: a
 recorded counterexample references an ID, so an ID is never reassigned. Like the
 other protocol layers it includes no system header and compiles freestanding.
 
+### D23 — The adversary attacks the real code, and its first finding was real
+
+`fuzz/ahdg_explore.c` drives the production `uds.c` — not a reimplementation —
+through action sequences, evaluating the invariant catalogue after each step. On
+its first campaign it found AHDG-0001: security surviving a return to the default
+session (SEC-4), a genuine cross-layer state confusion. It was minimized to four
+actions, fixed, encoded as a permanent regression, and the re-attack found zero
+counterexamples over 2,000,000 sequences on two seeds.
+
+Two rules this sets. A counterexample is not a defeat, it is a result: save it
+(docs/findings/), understand it, fix it, regress it, re-attack — the loop in
+RESEARCH.md §9. And the explorer's exit code gates CI: an uncovered
+counterexample fails the build, so a security regression cannot pass unnoticed.
+
+Honesty on impact is mandatory (extends §6): AHDG-0001 is documented as a latent
+state confusion, not a demonstrated privilege escalation, because defense-in-depth
+(the session check) masks the direct exploit in the current service set. Do not
+inflate a finding's severity.
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform

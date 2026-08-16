@@ -239,6 +239,24 @@ static uds_result_t handle_diagnostic_session_control(
     switch (subfunction)
     {
     case (uint8_t)UDS_SESSION_DEFAULT:
+        /*
+         * Retour explicite en session par defaut.
+         *
+         * SecurityAccess n'a de sens que dans une session non par defaut :
+         * entrer en session par defaut termine l'activite de diagnostic et
+         * ramene le serveur a son etat de mise sous tension, donc verrouille.
+         *
+         * Sans ce reverrouillage, la sequence
+         *   10 03 (extended) -> 27 (unlock) -> 10 01 (default)
+         * laissait la securite deverrouillee en session par defaut : un
+         * etat interdit (invariant SEC-4), decouvert par l'explorateur
+         * adversarial AHDG. Voir docs/findings/AHDG-0001.md.
+         */
+        ctx->session        = UDS_SESSION_DEFAULT;
+        ctx->security_level = UDS_SECURITY_LOCKED;
+        ctx->seed_pending   = 0u;
+        break;
+
     case (uint8_t)UDS_SESSION_EXTENDED:
         ctx->session = (uds_session_t)subfunction;
         break;
