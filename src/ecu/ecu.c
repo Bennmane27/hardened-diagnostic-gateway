@@ -12,6 +12,7 @@
 #include <net/if.h>
 
 #include "isotp.h"
+#include "uds.h"
 
 int main(void)
 {
@@ -21,6 +22,10 @@ int main(void)
 
     struct can_frame rx_frame;
     struct can_frame tx_frame;
+
+    // Contexte du serveur UDS : porte la session courante.
+    uds_context_t uds_ctx;
+    uds_init(&uds_ctx);
 
     // 1. Creer le socket CAN
     socket_fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -111,84 +116,86 @@ int main(void)
         printf("ISO-TP : Single Frame\n");
         printf("Longueur payload : %u octets\n", payload_length);
 
-        // Pour notre requete actuelle, on attend au moins 2 octets UDS
-        if (payload_length < 2)
+        /*
+         * Traitement UDS
+         *
+         * L'ECU ne decode plus lui-meme les services : il transmet la
+         * payload au serveur UDS et recoit une reponse deja formee,
+         * positive ou negative. La validation des longueurs et des
+         * sous-fonctions appartient a uds.c.
+         */
+
+        uint8_t uds_response[UDS_MAX_RESPONSE_SIZE];
+        uint8_t uds_response_len = 0;
+
+        uds_result_t uds_res = uds_handle_request(&uds_ctx,
+                                                  payload,
+                                                  payload_length,
+                                                  uds_response,
+                                                  sizeof(uds_response),
+                                                  &uds_response_len);
+
+        if (uds_res == UDS_NO_RESPONSE)
         {
-            printf("Erreur : payload ISO-TP trop court\n");
+            printf("UDS : aucune reponse a emettre\n");
+            printf("Session courante : %s\n",
+                   uds_session_to_string(uds_ctx.session));
             continue;
         }
 
-        /*
-         * Decodage UDS
-         *
-         * payload[0] et payload[1] : garantis presents par ISO-TP.
-         */
-
-        uint8_t uds_service = payload[0];
-        uint8_t uds_subfunction = payload[1];
-
-        printf("UDS Service : 0x%02X\n", uds_service);
-        printf("UDS Sub-function : 0x%02X\n", uds_subfunction);
-
-        /*
-         * Service 0x10 :
-         * DiagnosticSessionControl
-         *
-         * Sub-function 0x03 :
-         * Extended Diagnostic Session
-         */
-
-        if ((uds_service == 0x10) &&
-            (uds_subfunction == 0x03))
+        if (uds_res != UDS_OK)
         {
-            printf("UDS : demande Extended Diagnostic Session\n");
+            printf("UDS : erreur interne (%s)\n",
+                   uds_result_to_string(uds_res));
+            continue;
+        }
 
-            /*
-             * Reponse positive UDS :
-             *
-             * 0x50 = 0x10 + 0x40
-             * 0x03 = session acceptee
-             *
-             * L'ECU construit uniquement la payload UDS.
-             * C'est ISO-TP qui ajoute le PCI et le bourrage.
-             */
-
-            uint8_t uds_response[2];
-            uint8_t tx_len = 0;
-
-            uds_response[0] = (uint8_t)(uds_service + 0x40u);
-            uds_response[1] = uds_subfunction;
-
-            isotp_res = isotp_encode_single_frame(uds_response,
-                                                  sizeof(uds_response),
-                                                  tx_frame.data,
-                                                  sizeof(tx_frame.data),
-                                                  &tx_len);
-
-            if (isotp_res != ISOTP_OK)
-            {
-                printf("ISO-TP : encodage impossible (%s)\n",
-                       isotp_result_to_string(isotp_res));
-                continue;
-            }
-
-            tx_frame.can_id = 0x7E8;
-            tx_frame.can_dlc = tx_len;
-
-            if (write(socket_fd, &tx_frame, sizeof(tx_frame)) !=
-                sizeof(tx_frame))
-            {
-                perror("write");
-                break;
-            }
-
-            printf("UDS : Extended Session acceptee\n");
-            printf("Reponse envoyee sur 0x7E8\n");
+        // Trace lisible : reponse positive ou negative ?
+        if (uds_response[0] == UDS_NEGATIVE_RESPONSE_SID)
+        {
+            printf("UDS : reponse NEGATIVE au service 0x%02X -> 0x%02X (%s)\n",
+                   uds_response[1],
+                   uds_response[2],
+                   uds_nrc_to_string(uds_response[2]));
         }
         else
         {
-            printf("UDS : service ou sous-fonction non supporte\n");
+            printf("UDS : reponse positive 0x%02X\n", uds_response[0]);
+            printf("Session courante : %s\n",
+                   uds_session_to_string(uds_ctx.session));
         }
+
+        /*
+         * La reponse UDS est ensuite encapsulee par ISO-TP, qui ajoute
+         * le PCI et le bourrage.
+         */
+
+        uint8_t tx_len = 0;
+
+        isotp_res = isotp_encode_single_frame(uds_response,
+                                              uds_response_len,
+                                              tx_frame.data,
+                                              sizeof(tx_frame.data),
+                                              &tx_len);
+
+        if (isotp_res != ISOTP_OK)
+        {
+            printf("ISO-TP : encodage impossible (%s)\n",
+                   isotp_result_to_string(isotp_res));
+            continue;
+        }
+
+        tx_frame.can_id = 0x7E8;
+        tx_frame.can_dlc = tx_len;
+
+        if (write(socket_fd, &tx_frame, sizeof(tx_frame)) !=
+            sizeof(tx_frame))
+        {
+            perror("write");
+            break;
+        }
+
+        printf("Reponse envoyee sur 0x7E8\n");
     }
 
     close(socket_fd);

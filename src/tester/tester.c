@@ -13,6 +13,7 @@
 #include <net/if.h>
 
 #include "isotp.h"
+#include "uds.h"
 
 int main(void)
 {
@@ -126,11 +127,6 @@ int main(void)
 
             /*
              * Decodage ISO-TP de la reponse.
-             *
-             * Reponse attendue apres decodage :
-             *
-             * 50 = reponse positive au service 0x10
-             * 03 = Extended Diagnostic Session
              */
 
             const uint8_t *payload = NULL;
@@ -151,11 +147,48 @@ int main(void)
             printf("ISO-TP : Single Frame, %u octets de payload\n",
                    payload_length);
 
+            /*
+             * Une reponse negative commence par 0x7F et vaut toujours
+             * 3 octets : 7F <SID rejete> <NRC>. Il faut la distinguer
+             * AVANT d'esperer une reponse positive, sinon un rejet
+             * serait interprete comme une reponse inattendue.
+             */
+            if ((payload_length == UDS_NEGATIVE_RESPONSE_LEN) &&
+                (payload[0] == UDS_NEGATIVE_RESPONSE_SID))
+            {
+                printf("UDS : REPONSE NEGATIVE\n");
+                printf("  Service rejete : 0x%02X\n", payload[1]);
+                printf("  NRC            : 0x%02X (%s)\n",
+                       payload[2], uds_nrc_to_string(payload[2]));
+                break;
+            }
+
+            /*
+             * Reponse positive attendue :
+             *
+             * 50 03 00 32 01 F4
+             *
+             * 0x50 = 0x10 + 0x40
+             * 0x03 = Extended Diagnostic Session
+             * puis le sessionParameterRecord : P2Server_max et
+             * P2*Server_max, chacun sur 2 octets en big endian.
+             */
             if ((payload_length >= 2) &&
-                (payload[0] == 0x50) &&
-                (payload[1] == 0x03))
+                (payload[0] == (UDS_SID_DIAGNOSTIC_SESSION_CONTROL +
+                                UDS_POSITIVE_RESPONSE_OFFSET)) &&
+                (payload[1] == (uint8_t)UDS_SESSION_EXTENDED))
             {
                 printf("UDS : Extended Diagnostic Session acceptee\n");
+
+                if (payload_length >= 6)
+                {
+                    uint16_t p2      = (uint16_t)((payload[2] << 8) | payload[3]);
+                    uint16_t p2_star = (uint16_t)((payload[4] << 8) | payload[5]);
+
+                    printf("  P2Server_max  : %u ms\n", p2);
+                    printf("  P2*Server_max : %u ms\n",
+                           (unsigned)(p2_star * 10u));
+                }
             }
             else
             {
