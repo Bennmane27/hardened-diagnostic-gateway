@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build, test and fuzz
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build applications
+        run: make
+
+      # Les invariants d'architecture sont verifies avant les tests :
+      # un header Linux qui s'invite dans la couche protocole doit faire
+      # echouer la CI, meme si tout le reste passe.
+      - name: Check architecture invariants
+        run: make check-portability
+
+      - name: Unit tests (AddressSanitizer + UndefinedBehaviorSanitizer)
+        run: make test
+
+      - name: Parser fuzzing campaign
+        run: ./build/fuzz_parser 500000 0xC0FFEE
+
+  strict-warnings:
+    name: Strict warnings
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Un cran au-dessus du build normal : -Werror, -Wconversion et
+      # -Wshadow sur les couches protocole. Elles doivent rester propres
+      # meme sous les avertissements que les applications ne subissent
+      # pas encore.
+      - name: Protocol layers under strict warnings
+        run: |
+          for f in src/isotp/*.c src/uds/*.c; do
+            gcc -Wall -Wextra -Werror -Wconversion -Wshadow -Wpedantic \
+                -std=c11 -Isrc/isotp -Isrc/uds -c "$f" -o /dev/null
+          done
+
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck --enable=warning,style,performance,portability \
+                   --error-exitcode=1 \
+                   --inline-suppr \
+                   --suppress=missingIncludeSystem \
+                   --std=c11 \
+                   -Isrc/isotp -Isrc/uds -Isrc/ecu \
+                   -Isrc/platform -Isrc/platform/socketcan \
+                   src/ tests/ fuzz/ tools/
+
+  integration:
+    name: End-to-end over a virtual CAN bus
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install can-utils
+        run: sudo apt-get update && sudo apt-get install -y can-utils
+
+      - name: Create vcan0
+        run: |
+          sudo modprobe vcan
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link set up vcan0
+          ip -details link show vcan0
+
+      - name: Build
+        run: make
+
+      # Le tester deroule le scenario complet, le fuzzer bombarde ensuite
+      # le meme ECU. Le code de retour du fuzzer est ce qui compte : il
+      # est non nul si une sonde de vitalite a echoue ou si une commande
+      # protegee a ete acceptee.
+      - name: Diagnostic scenario
+        run: |
+          ./build/ecu -q &
+          ECU_PID=$!
+          sleep 2
+          ./build/tester
+          sleep 1
+          kill $ECU_PID || true
+
+      - name: Fault injection campaign
+        run: |
+          ./build/ecu -q &
+          ECU_PID=$!
+          sleep 2
+          ./build/fuzz_bus 400 0xBADC0DE
+          kill $ECU_PID || true

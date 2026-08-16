@@ -4,6 +4,7 @@
 #
 #   make                     -> construit build/ecu et build/tester
 #   make test                -> tests unitaires (ASan + UBSan)
+#   make fuzz                -> campagne de fuzzing des analyseurs
 #   make check-portability   -> verifie les invariants I1 et I2
 #   make clean               -> supprime build/
 #
@@ -29,7 +30,7 @@ HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
 # de Linux.
 TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
-all: $(BUILD)/ecu $(BUILD)/tester
+all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/fuzz_bus
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
@@ -58,6 +59,17 @@ test: $(BUILD)/test_isotp $(BUILD)/test_isotp_multiframe \
 	./$(BUILD)/test_uds
 	@echo ""
 	./$(BUILD)/test_ecu_data
+
+$(BUILD)/fuzz_bus: tools/fuzzer/fuzz_bus.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) tools/fuzzer/fuzz_bus.c $(ISOTP) $(UDS) $(PLATFORM) -o $@
+
+$(BUILD)/fuzz_parser: fuzz/fuzz_parser.c $(ISOTP) $(UDS) $(HEADERS) | $(BUILD)
+	$(CC) $(TEST_CFLAGS) fuzz/fuzz_parser.c $(ISOTP) $(UDS) -o $@
+
+# Campagne courte par defaut : elle doit rester utilisable en CI.
+# Pour une campagne longue : ./build/fuzz_parser 5000000 0x1234
+fuzz: $(BUILD)/fuzz_parser
+	./$(BUILD)/fuzz_parser 200000 0xC0FFEE
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -89,8 +101,22 @@ check-portability:
 	        -c $$f -o /dev/null || exit 1; \
 	 done
 	@echo "OK"
+	@echo "== I1ter : couches protocole sous -Wconversion et -Wshadow =="
+	@for f in $(ISOTP) $(UDS); do \
+	    $(CC) -Wall -Wextra -Werror -Wconversion -Wshadow -Wpedantic \
+	        -std=c11 $(INCLUDES) -c $$f -o /dev/null || exit 1; \
+	 done
+	@echo "OK"
+	@echo "== I2bis : aucun symbole d'allocation dans les binaires =="
+	@$(MAKE) --no-print-directory $(BUILD)/ecu $(BUILD)/tester >/dev/null
+	@for b in $(BUILD)/ecu $(BUILD)/tester; do \
+	    if nm -u $$b 2>/dev/null | grep -qE '\b(malloc|calloc|realloc|free)$$'; then \
+	        echo "ECHEC : $$b reference l'allocateur"; exit 1; \
+	    fi; \
+	 done
+	@echo "OK"
 
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test check-portability clean
+.PHONY: all test fuzz check-portability clean
