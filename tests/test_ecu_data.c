@@ -191,6 +191,7 @@ static void test_capacity_sweep(void)
         for (cap = 0u; cap <= 20u; cap++)
         {
             uint8_t *buf = (uint8_t *)malloc(cap ? cap : 1u);
+            if (buf == NULL) { g_failures++; break; }
             uint16_t len = 0xFFu;
             uds_result_t res;
 

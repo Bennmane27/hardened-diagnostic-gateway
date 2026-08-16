@@ -561,6 +561,7 @@ static void test_fuzz_sweep(void)
             for (phase = 0; phase < 2; phase++)
             {
                 uint8_t *frame = (uint8_t *)malloc(len ? len : 1u);
+                if (frame == NULL) { g_failures++; break; }
                 uint8_t i;
 
                 isotp_rx_init(&g_rx);

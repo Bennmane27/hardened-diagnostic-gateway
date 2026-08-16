@@ -99,6 +99,7 @@ static void test_decode_exhaustive(void)
         {
             /* Taille exacte : ASAN surveille tout depassement. */
             uint8_t *frame = (uint8_t *)malloc(frame_len ? frame_len : 1u);
+            if (frame == NULL) { g_failures++; break; }
             const uint8_t *payload = NULL;
             uint8_t payload_len = 0u;
             isotp_result_t got;

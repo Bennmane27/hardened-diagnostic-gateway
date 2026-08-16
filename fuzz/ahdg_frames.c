@@ -306,7 +306,7 @@ static int minimize(frame_act_t *seq, int len, int target)
     while (changed) {
         int i; changed=0;
         for (i=0;i<len;i++) {
-            frame_act_t tmp[MAXSEQ]; int tl=0,j;
+            frame_act_t tmp[MAXSEQ] = {0}; int tl=0,j;
             for (j=0;j<len;j++) if (j!=i) tmp[tl++]=seq[j];
             if (replay(tmp,tl)==target) {
                 for (j=0;j<tl;j++) seq[j]=tmp[j];

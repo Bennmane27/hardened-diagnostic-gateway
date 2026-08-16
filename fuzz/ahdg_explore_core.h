@@ -274,7 +274,7 @@ static inline int ahdg_minimize(ahdg_action_t *seq, int len, int target)
         changed = 0;
         for (i = 0; i < len; i++)
         {
-            ahdg_action_t tmp[AHDG_MAX_SEQ];
+            ahdg_action_t tmp[AHDG_MAX_SEQ] = {0};
             int tlen = 0, j;
             for (j = 0; j < len; j++) { if (j != i) { tmp[tlen++] = seq[j]; } }
             if (ahdg_replay(tmp, tlen) == target)
