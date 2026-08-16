@@ -42,7 +42,7 @@ reproducible experiment.
 | M55 | Adversarial state-space explorer + delta-debug minimizer | **partial** — UDS-level explorer (`fuzz/ahdg_explore.c`) live; found AHDG-0001 |
 | M56 | Frozen counterexample corpus + exact replay | |
 | M57 | Benchmark harness S0 / S1 / S2 | **done** — 83,895→0 unauthorized resets, availability 500/500, ~80 ns ([bench doc](docs/findings/BENCH-S0-S1-S2.md)) |
-| M58 | STM32 + FDCAN port, measured latency | |
+| M58 | STM32 + FDCAN port, measured latency ([shopping list & how-to](docs/HARDWARE.md)) | needs boards |
 | M59 | One-command reproduction + CI gate on blocked-attack count | |
 | M60 | Prior-art review — hard gate on the novelty claim | |
 | M61 | Write-up: threat model, invariants, discovery, results | |
