@@ -35,7 +35,7 @@ reproducible experiment.
 | # | Milestone | Status |
 |---|-----------|--------|
 | M50 | `invariants.h` — cross-layer invariant catalogue as code | done |
-| M51 | Gateway shadow state: passive ISO-TP + UDS tracking | next |
+| M51 | Gateway shadow state: passive ISO-TP + UDS tracking | **partial** — frame-level explorer reconstructs combined state (`fuzz/ahdg_frames.c`) |
 | M52 | Invariant engine: evaluate, verdict ALLOW / DROP / RECOVER | |
 | M53 | In-line CAN gateway, transparent on the nominal path | |
 | M54 | RECOVER: post-violation resynchronization, availability restored | |
@@ -47,6 +47,11 @@ reproducible experiment.
 | M60 | Prior-art review — hard gate on the novelty claim | |
 | M61 | Write-up: threat model, invariants, discovery, results | |
 | M62 | In-browser WASM lab: real stack + adversary, zero install | done |
+
+Findings: [AHDG-0001](docs/findings/AHDG-0001.md) — a real cross-layer state
+confusion, fixed. [AHDG-0002](docs/findings/AHDG-0002.md) — 21M adversarial CAN
+frames, no transport-forged authority and no denial of diagnostic (bounded
+assurance, re-checked in CI).
 
 First experimental finding: [docs/findings/AHDG-0001.md](docs/findings/AHDG-0001.md)
 — a cross-layer state confusion in the real UDS server, discovered automatically,

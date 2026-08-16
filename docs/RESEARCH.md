@@ -205,6 +205,17 @@ and the triggering frame, so a violation is not just stopped but **explained**.
 
 ---
 
+## 4bis. First experimental support (frame level)
+
+`fuzz/ahdg_frames.c` already drives the real `isotp_rx + uds` pipeline with
+adversarial CAN frames and checks the SEC, XL and AVAIL invariants after each
+sequence, with a golden probe verifying the ECU stays serviceable. Over 21
+million frames on two seeds it found no transport-forged authority and no denial
+of diagnostic — bounded assurance for the XL/AVAIL claims, re-checked in CI. See
+[findings/AHDG-0002.md](findings/AHDG-0002.md). This is the reconstruction half
+of M51 and the frame-level half of M55; the remaining work is the in-line gateway
+that mediates and enforces before the ECU (M52-M53).
+
 ## 5. The adversarial state-space fuzzer
 
 Not the byte fuzzer already in `fuzz/fuzz_parser.c` — that finds parser

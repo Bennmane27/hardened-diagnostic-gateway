@@ -291,6 +291,18 @@ produced by the Pages workflow, not committed.
 Enabling it is a one-time manual step the user must do: repo Settings -> Pages
 -> Source: GitHub Actions. The Makefile cannot do it.
 
+### D25 — The frame-level adversary tests the cross-layer claim, honestly
+
+`fuzz/ahdg_frames.c` drives the real isotp_rx + uds pipeline with adversarial CAN
+frame sequences (SF/FF/CF/FC/garbage/interleave/timeout) and a golden probe after
+each, searching for a transport manipulation that forges UDS authority (XL-*) or
+wedges the ECU (AVAIL-2). Over 21M frames on two seeds: zero counterexamples
+(AHDG-0002). This is bounded assurance, recorded and CI-gated (`make frames`), not
+proof — the adversary explores, it does not enumerate. A negative result is a
+result: it is the first experimental support for the cross-layer claims, and it
+says the transport's reset-on-anomaly discipline closes the authority-forging path
+by construction. Do not report it as proof, and never inflate it to "impossible".
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform

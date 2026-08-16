@@ -35,6 +35,12 @@ jobs:
       - name: Adversarial state-space exploration
         run: ./build/ahdg_explore 500000 0xA11CE
 
+      # L'adversaire descend au niveau des trames CAN : il cherche une
+      # confusion cross-layer (transport forgeant une autorite UDS) ou une
+      # atteinte a la disponibilite dans le vrai pipeline isotp_rx + uds.
+      - name: Frame-level cross-layer exploration
+        run: ./build/ahdg_frames 300000 0xF00D
+
   strict-warnings:
     name: Strict warnings
     runs-on: ubuntu-latest

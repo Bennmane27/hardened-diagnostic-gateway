@@ -6,6 +6,7 @@
 #   make test                -> tests unitaires (ASan + UBSan)
 #   make fuzz                -> campagne de fuzzing des analyseurs
 #   make explore             -> exploration adversariale des invariants UDS
+#   make frames              -> exploration adversariale au niveau des trames CAN
 #   make demo                -> rejoue et reenregistre la demonstration
 #   make web                 -> console web sur http://127.0.0.1:8800
 #   make setup               -> rappelle comment rendre vcan0 permanente
@@ -36,7 +37,8 @@ HEADERS  := src/isotp/isotp.h src/uds/uds.h src/ecu/ecu_data.h \
 TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES)
 
 all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli \
-     $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser $(BUILD)/ahdg_explore
+     $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser $(BUILD)/ahdg_explore \
+     $(BUILD)/ahdg_frames
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
@@ -89,6 +91,18 @@ $(BUILD)/ahdg_explore: fuzz/ahdg_explore.c $(UDS) src/uds/uds.h \
 # fait un critere de reussite.
 explore: $(BUILD)/ahdg_explore
 	./$(BUILD)/ahdg_explore 500000 0xA11CE
+
+ISOTP_C := src/isotp/isotp.c src/isotp/isotp_rx.c src/isotp/isotp_tx.c
+
+$(BUILD)/ahdg_frames: fuzz/ahdg_frames.c $(ISOTP_C) $(UDS) $(ECU_DATA) \
+                     $(HEADERS) src/gateway/invariants.h | $(BUILD)
+	$(CC) $(TEST_CFLAGS) fuzz/ahdg_frames.c $(ISOTP_C) $(UDS) $(ECU_DATA) -o $@
+
+# Explorateur adversarial au niveau des trames CAN : cherche une confusion
+# cross-layer ou une atteinte a la disponibilite dans le vrai pipeline
+# isotp_rx + uds. Sortie non nulle si un contre-exemple apparait.
+frames: $(BUILD)/ahdg_frames
+	./$(BUILD)/ahdg_frames 300000 0xF00D
 
 # Rejoue la demonstration, la reenregistre et regenere le SVG anime du
 # README. Necessite asciinema.
@@ -173,4 +187,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz explore demo web setup check-portability clean
+.PHONY: all test fuzz explore frames demo web setup check-portability clean
