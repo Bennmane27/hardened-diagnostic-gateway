@@ -143,6 +143,80 @@ static void print_uds_response(const uint8_t *payload, uint16_t len)
         return;
     }
 
+    /* 0x59 : ReadDTCInformation. */
+    if ((len >= 3u) &&
+        (payload[0] == (UDS_SID_READ_DTC_INFORMATION +
+                        UDS_POSITIVE_RESPONSE_OFFSET)))
+    {
+        uint16_t count = (uint16_t)((len - 3u) / 4u);
+        uint16_t i;
+
+        printf("  -> OK     %u code(s) defaut\n", count);
+
+        for (i = 0u; i < count; i++)
+        {
+            const uint8_t *rec = &payload[3u + (i * 4u)];
+            uint32_t code = (((uint32_t)rec[0]) << 16) |
+                            (((uint32_t)rec[1]) << 8) |
+                            ((uint32_t)rec[2]);
+
+            printf("            %06X  statut %02X  %s\n",
+                   code, rec[3], ecu_data_dtc_to_string(code));
+        }
+        return;
+    }
+
+    /* 0x67 : SecurityAccess. */
+    if ((len >= 2u) &&
+        (payload[0] == (UDS_SID_SECURITY_ACCESS +
+                        UDS_POSITIVE_RESPONSE_OFFSET)))
+    {
+        if ((payload[1] == UDS_SECURITY_REQUEST_SEED) && (len >= 6u))
+        {
+            uint32_t seed = (((uint32_t)payload[2]) << 24) |
+                            (((uint32_t)payload[3]) << 16) |
+                            (((uint32_t)payload[4]) << 8) |
+                            ((uint32_t)payload[5]);
+            printf("  -> OK     graine recue : %08X\n", seed);
+        }
+        else if (payload[1] == UDS_SECURITY_SEND_KEY)
+        {
+            printf("  -> OK     ACCES DEVERROUILLE\n");
+        }
+        else
+        {
+            printf("  -> OK     SecurityAccess\n");
+        }
+        return;
+    }
+
+    /* 0x54 : ClearDiagnosticInformation. */
+    if ((len == 1u) &&
+        (payload[0] == (UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION +
+                        UDS_POSITIVE_RESPONSE_OFFSET)))
+    {
+        printf("  -> OK     defauts effaces\n");
+        return;
+    }
+
+    /* 0x51 : ECUReset. */
+    if ((len >= 2u) &&
+        (payload[0] == (UDS_SID_ECU_RESET + UDS_POSITIVE_RESPONSE_OFFSET)))
+    {
+        printf("  -> OK     calculateur reinitialise (type 0x%02X)\n",
+               payload[1]);
+        return;
+    }
+
+    /* 0x7E : TesterPresent. */
+    if ((len >= 1u) &&
+        (payload[0] == (UDS_SID_TESTER_PRESENT +
+                        UDS_POSITIVE_RESPONSE_OFFSET)))
+    {
+        printf("  -> OK     TesterPresent\n");
+        return;
+    }
+
     printf("  -> reponse non interpretee (%u octets)\n", len);
 }
 
@@ -150,9 +224,16 @@ static void print_uds_response(const uint8_t *payload, uint16_t len)
 /* Echange                                                             */
 /* ------------------------------------------------------------------ */
 
-static void request(const char *label,
-                    const uint8_t *payload,
-                    uint16_t payload_len)
+/*
+ * Emet une requete, affiche la reponse, et la recopie pour l'appelant.
+ *
+ * Retour : longueur de la reponse, 0 si aucune.
+ */
+static uint16_t request_into(const char *label,
+                             const uint8_t *payload,
+                             uint16_t payload_len,
+                             uint8_t *copy,
+                             uint16_t copy_capacity)
 {
     const uint8_t *response = NULL;
     uint16_t response_len = 0u;
@@ -165,7 +246,7 @@ static void request(const char *label,
     {
         printf("  -> ECHEC emission (%s)\n",
                isotp_result_to_string(g_link.last_error));
-        return;
+        return 0u;
     }
 
     r = diag_link_recv(&g_link, &response, &response_len,
@@ -174,18 +255,31 @@ static void request(const char *label,
     if (r < 0)
     {
         printf("  -> ERREUR de reception\n");
-        return;
+        return 0u;
     }
 
     if (r == 0)
     {
         printf("  -> AUCUNE REPONSE (delai de %u ms expire)\n",
                RESPONSE_TIMEOUT_MS);
-        return;
+        return 0u;
     }
 
     g_answered++;
     print_uds_response(response, response_len);
+
+    if ((copy != NULL) && (response_len <= copy_capacity))
+    {
+        memcpy(copy, response, response_len);
+    }
+    return response_len;
+}
+
+static void request(const char *label,
+                    const uint8_t *payload,
+                    uint16_t payload_len)
+{
+    (void)request_into(label, payload, payload_len, NULL, 0u);
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,10 +306,24 @@ int main(int argc, char **argv)
     printf("=== Tester de diagnostic ===\n");
     printf("Interface : %s\n", CAN_INTERFACE);
 
+    /* --- Session par defaut --- */
+    {
+        const uint8_t req[] = { UDS_SID_TESTER_PRESENT, 0x00 };
+        request("TesterPresent (session par defaut)", req, sizeof(req));
+    }
+    {
+        const uint8_t req[] = { UDS_SID_ECU_RESET, 0x01 };
+        request("ECUReset en session par defaut -> doit etre refuse",
+                req, sizeof(req));
+    }
+
+    /* --- Passage en session etendue --- */
     {
         const uint8_t req[] = { UDS_SID_DIAGNOSTIC_SESSION_CONTROL, 0x03 };
         request("DiagnosticSessionControl -> Extended", req, sizeof(req));
     }
+
+    /* --- Lectures --- */
     {
         const uint8_t req[] = { UDS_SID_READ_DATA_BY_IDENTIFIER, 0xF1, 0x89 };
         request("ReadDataByIdentifier -> version logicielle",
@@ -226,26 +334,112 @@ int main(int argc, char **argv)
         request("ReadDataByIdentifier -> regime moteur", req, sizeof(req));
     }
     {
-        const uint8_t req[] = { UDS_SID_READ_DATA_BY_IDENTIFIER, 0x01, 0x02 };
-        request("ReadDataByIdentifier -> temperature moteur",
-                req, sizeof(req));
-    }
-    {
-        const uint8_t req[] = { UDS_SID_READ_DATA_BY_IDENTIFIER, 0x01, 0x03 };
-        request("ReadDataByIdentifier -> tension batterie", req, sizeof(req));
-    }
-
-    /*
-     * Le VIN fait 17 octets : la reponse depasse ce qu'une Single Frame
-     * peut porter. C'est le transfert multi-trames qui la rend possible.
-     */
-    {
         const uint8_t req[] = { UDS_SID_READ_DATA_BY_IDENTIFIER, 0xF1, 0x90 };
-        request("ReadDataByIdentifier -> VIN (multi-trames)",
+        request("ReadDataByIdentifier -> VIN (transfert multi-trames)",
                 req, sizeof(req));
     }
 
-    /* --- Chemins de refus --- */
+    /* --- Defauts --- */
+    {
+        const uint8_t req[] = { UDS_SID_READ_DTC_INFORMATION, 0x02, 0x09 };
+        request("ReadDTCInformation -> defauts confirmes", req, sizeof(req));
+    }
+
+    /* --- La commande sensible est refusee sans deverrouillage --- */
+    {
+        const uint8_t req[] = { UDS_SID_ECU_RESET, 0x01 };
+        request("ECUReset sans SecurityAccess -> doit etre refuse",
+                req, sizeof(req));
+    }
+
+    /* --- SecurityAccess : mauvaise cle, puis bonne cle --- */
+    {
+        uint8_t resp[16];
+        uint16_t n;
+        uint32_t seed = 0u;
+        uint32_t key;
+
+        {
+            const uint8_t req[] = { UDS_SID_SECURITY_ACCESS,
+                                    UDS_SECURITY_REQUEST_SEED };
+            n = request_into("SecurityAccess -> demande de graine",
+                             req, sizeof(req), resp, sizeof(resp));
+            if (n >= 6u)
+            {
+                seed = (((uint32_t)resp[2]) << 24) |
+                       (((uint32_t)resp[3]) << 16) |
+                       (((uint32_t)resp[4]) << 8) |
+                       ((uint32_t)resp[5]);
+            }
+        }
+
+        /* Cle volontairement fausse. */
+        {
+            uint8_t req[6];
+            req[0] = UDS_SID_SECURITY_ACCESS;
+            req[1] = UDS_SECURITY_SEND_KEY;
+            req[2] = 0xDE; req[3] = 0xAD; req[4] = 0xBE; req[5] = 0xEF;
+            request("SecurityAccess -> cle fausse", req, sizeof(req));
+        }
+
+        /* La graine a ete consommee : il faut en redemander une. */
+        {
+            const uint8_t req[] = { UDS_SID_SECURITY_ACCESS,
+                                    UDS_SECURITY_REQUEST_SEED };
+            n = request_into("SecurityAccess -> nouvelle graine",
+                             req, sizeof(req), resp, sizeof(resp));
+            if (n >= 6u)
+            {
+                seed = (((uint32_t)resp[2]) << 24) |
+                       (((uint32_t)resp[3]) << 16) |
+                       (((uint32_t)resp[4]) << 8) |
+                       ((uint32_t)resp[5]);
+            }
+        }
+
+        key = uds_demo_key_from_seed(seed);
+
+        {
+            uint8_t req[6];
+            req[0] = UDS_SID_SECURITY_ACCESS;
+            req[1] = UDS_SECURITY_SEND_KEY;
+            req[2] = (uint8_t)((key >> 24) & 0xFFu);
+            req[3] = (uint8_t)((key >> 16) & 0xFFu);
+            req[4] = (uint8_t)((key >> 8) & 0xFFu);
+            req[5] = (uint8_t)(key & 0xFFu);
+            request("SecurityAccess -> cle correcte", req, sizeof(req));
+
+            /* Rejeu immediat de la meme cle : aucune graine en attente. */
+            request("SecurityAccess -> rejeu de la meme cle",
+                    req, sizeof(req));
+        }
+    }
+
+    /* --- Operations desormais autorisees --- */
+    {
+        const uint8_t req[] = { UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION,
+                                0xFF, 0xFF, 0xFF };
+        request("ClearDiagnosticInformation -> tous les defauts",
+                req, sizeof(req));
+    }
+    {
+        const uint8_t req[] = { UDS_SID_READ_DTC_INFORMATION, 0x02, 0x09 };
+        request("ReadDTCInformation -> apres effacement", req, sizeof(req));
+    }
+    {
+        const uint8_t req[] = { UDS_SID_ECU_RESET, 0x01 };
+        request("ECUReset apres deverrouillage -> doit etre accepte",
+                req, sizeof(req));
+    }
+
+    /* --- Apres reinitialisation, tout est reverrouille --- */
+    {
+        const uint8_t req[] = { UDS_SID_ECU_RESET, 0x01 };
+        request("ECUReset juste apres le reset -> refuse a nouveau",
+                req, sizeof(req));
+    }
+
+    /* --- Chemins de refus divers --- */
     {
         const uint8_t req[] = { UDS_SID_READ_DATA_BY_IDENTIFIER, 0xAB, 0xCD };
         request("ReadDataByIdentifier -> identifiant inconnu",

@@ -208,6 +208,103 @@ static void test_capacity_sweep(void)
     printf("    -> 8 identifiants x 21 capacites, aucun debordement ASAN\n");
 }
 
+/* ------------------------------------------------------------------ */
+/* 4. Codes defaut                                                     */
+/* ------------------------------------------------------------------ */
+static void test_dtc(void)
+{
+    ecu_data_t data;
+    uint8_t buf[64];
+    uint16_t len;
+
+    printf("[4] Codes defaut\n");
+
+    ecu_data_init(&data);
+
+    /* Masque des defauts confirmes. */
+    len = 0u;
+    check(ecu_data_read_dtc(ECU_DTC_STATUS_CONFIRMED, buf, sizeof(buf),
+                            &len, &data) == UDS_OK, "lecture acceptee");
+    check(len == 8u, "deux defauts actifs au demarrage, 4 octets chacun");
+    check(buf[0] == 0x01 && buf[1] == 0x17 && buf[2] == 0x00,
+          "premier code 011700");
+
+    /* Masque ne correspondant a aucun statut. */
+    len = 0xFFu;
+    check(ecu_data_read_dtc(0x02u, buf, sizeof(buf), &len, &data) == UDS_OK,
+          "masque sans correspondance accepte");
+    check(len == 0u, "aucun defaut rapporte");
+
+    /* Tampon insuffisant : refus, jamais de troncature. */
+    check(ecu_data_read_dtc(ECU_DTC_STATUS_CONFIRMED, buf, 4u, &len, &data)
+          == UDS_ERR_BUFFER_TOO_SMALL,
+          "tampon de 4 octets refuse pour deux defauts");
+
+    /* Un defaut apparait quand la tension chute. */
+    {
+        int i;
+        for (i = 0; i < 200; i++) { ecu_data_tick(&data); }
+        len = 0u;
+        (void)ecu_data_read_dtc(ECU_DTC_STATUS_CONFIRMED, buf, sizeof(buf),
+                                &len, &data);
+        check(len >= 8u, "les defauts persistent apres evolution");
+    }
+
+    /* Effacement global. */
+    check(ecu_data_clear_dtc(ECU_DTC_GROUP_ALL, &data) == UDS_OK,
+          "effacement global accepte");
+    len = 0xFFu;
+    (void)ecu_data_read_dtc(0xFFu, buf, sizeof(buf), &len, &data);
+    check(len == 0u, "plus aucun defaut apres effacement");
+
+    /* Effacement d'un groupe inexistant. */
+    check(ecu_data_clear_dtc(0x000001u, &data) == UDS_ERR_DID_NOT_FOUND,
+          "groupe inconnu signale");
+
+    /* Effacement cible. */
+    ecu_data_init(&data);
+    check(ecu_data_clear_dtc(0x011700u, &data) == UDS_OK,
+          "effacement d'un code precis");
+    len = 0u;
+    (void)ecu_data_read_dtc(0xFFu, buf, sizeof(buf), &len, &data);
+    check(len == 4u, "il reste un seul defaut");
+
+    /* Pointeurs NULL. */
+    check(ecu_data_read_dtc(0xFFu, NULL, sizeof(buf), &len, &data)
+          == UDS_ERR_NULL_POINTER, "out NULL");
+    check(ecu_data_clear_dtc(ECU_DTC_GROUP_ALL, NULL)
+          == UDS_ERR_NULL_POINTER, "contexte NULL");
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Reinitialisation                                                 */
+/* ------------------------------------------------------------------ */
+static void test_reset(void)
+{
+    ecu_data_t data;
+    int i;
+
+    printf("[5] Reinitialisation\n");
+
+    ecu_data_init(&data);
+    for (i = 0; i < 100; i++) { ecu_data_tick(&data); }
+    (void)ecu_data_clear_dtc(ECU_DTC_GROUP_ALL, &data);
+
+    check(data.tick == 100u, "l'etat a evolue");
+
+    check(ecu_data_reset(0x01u, &data) == UDS_OK, "reinitialisation acceptee");
+    check(data.tick == 0u, "compteur remis a zero");
+    check(data.engine_rpm == 800u, "retour au ralenti");
+    check(data.dtc[0].active == 1u, "les defauts d'origine reviennent");
+    check(data.reset_count == 1u, "le nombre de resets est conserve");
+
+    check(ecu_data_reset(0x01u, &data) == UDS_OK, "second reset");
+    check(data.reset_count == 2u, "compteur de resets incremente");
+
+    check(ecu_data_reset(0x01u, NULL) == UDS_ERR_NULL_POINTER,
+          "contexte NULL");
+}
+
 int main(void)
 {
     printf("=============================================\n");
@@ -217,6 +314,8 @@ int main(void)
     test_state();
     test_read_did();
     test_capacity_sweep();
+    test_dtc();
+    test_reset();
 
     printf("\n=============================================\n");
     printf(" %d verifications, %d echec(s)\n", g_checks, g_failures);

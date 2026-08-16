@@ -45,6 +45,29 @@
 /* 0x62 + les 2 octets de l'identifiant, avant la valeur. */
 #define UDS_RDBI_HEADER_LEN         3u
 
+/* 0x11 : SID + type de reinitialisation. */
+#define UDS_RESET_REQUEST_LEN       2u
+#define UDS_RESET_HARD              0x01u
+#define UDS_RESET_SOFT              0x03u
+
+/* 0x3E : SID + sous-fonction (toujours 0x00). */
+#define UDS_TESTER_PRESENT_LEN      2u
+#define UDS_TESTER_PRESENT_SUBFN    0x00u
+
+/* 0x19 : la seule sous-fonction implementee. */
+#define UDS_DTC_REPORT_BY_STATUS_MASK 0x02u
+#define UDS_RDTC_REQUEST_LEN          3u
+
+/*
+ * Masque de disponibilite renvoye dans la reponse a 0x19 02 : il dit au
+ * client quels bits de statut ce calculateur sait renseigner.
+ * Bit 0 testFailed, bit 3 confirmedDTC.
+ */
+#define UDS_DTC_AVAILABILITY_MASK     0x09u
+
+/* 0x14 : SID + groupe de defauts sur 3 octets. */
+#define UDS_CLEAR_REQUEST_LEN         4u
+
 /* ------------------------------------------------------------------ */
 /* Libelles                                                            */
 /* ------------------------------------------------------------------ */
@@ -99,6 +122,29 @@ const char *uds_nrc_to_string(uint8_t nrc)
     }
 }
 
+const char *uds_sid_to_string(uint8_t sid)
+{
+    switch (sid)
+    {
+    case UDS_SID_DIAGNOSTIC_SESSION_CONTROL:
+        return "DiagnosticSessionControl";
+    case UDS_SID_ECU_RESET:
+        return "ECUReset";
+    case UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION:
+        return "ClearDiagnosticInformation";
+    case UDS_SID_READ_DTC_INFORMATION:
+        return "ReadDTCInformation";
+    case UDS_SID_READ_DATA_BY_IDENTIFIER:
+        return "ReadDataByIdentifier";
+    case UDS_SID_SECURITY_ACCESS:
+        return "SecurityAccess";
+    case UDS_SID_TESTER_PRESENT:
+        return "TesterPresent";
+    default:
+        return "service inconnu";
+    }
+}
+
 const char *uds_result_to_string(uds_result_t result)
 {
     switch (result)
@@ -113,6 +159,8 @@ const char *uds_result_to_string(uds_result_t result)
         return "tampon de reponse trop petit";
     case UDS_ERR_DID_NOT_FOUND:
         return "identifiant de donnee inconnu";
+    case UDS_ERR_NOT_SUPPORTED:
+        return "non supporte par l'application";
     default:
         return "erreur inconnue";
     }
@@ -347,18 +395,547 @@ static uds_result_t handle_read_data_by_identifier(
     }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Regles d'acces                                                      */
+/*                                                                     */
+/* Une table plutot qu'une cascade de conditions dispersees dans les    */
+/* handlers : la politique d'acces se lit d'un coup d'oeil, et un       */
+/* service ajoute sans regle se voit immediatement.                     */
+/* ------------------------------------------------------------------ */
+
+typedef struct
+{
+    uint8_t sid;
+    uint8_t requires_extended_session;  /* refuse en session par defaut */
+    uint8_t requires_security_unlock;   /* refuse tant que verrouille   */
+} service_rule_t;
+
+static const service_rule_t SERVICE_RULES[] = {
+    /* SID                                     session  securite */
+    { UDS_SID_DIAGNOSTIC_SESSION_CONTROL,          0u,      0u },
+    { UDS_SID_TESTER_PRESENT,                      0u,      0u },
+    { UDS_SID_READ_DATA_BY_IDENTIFIER,             0u,      0u },
+    { UDS_SID_READ_DTC_INFORMATION,                0u,      0u },
+    { UDS_SID_SECURITY_ACCESS,                     1u,      0u },
+    { UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION,        1u,      0u },
+    /*
+     * ECUReset est la commande sensible de demonstration : elle exige
+     * la session etendue ET un deverrouillage par SecurityAccess.
+     */
+    { UDS_SID_ECU_RESET,                           1u,      1u }
+};
+
+#define SERVICE_RULES_COUNT \
+    (sizeof(SERVICE_RULES) / sizeof(SERVICE_RULES[0]))
+
+static const service_rule_t *find_rule(uint8_t sid)
+{
+    size_t i;
+
+    for (i = 0u; i < SERVICE_RULES_COUNT; i++)
+    {
+        if (SERVICE_RULES[i].sid == sid)
+        {
+            return &SERVICE_RULES[i];
+        }
+    }
+    return NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* 0x3E TesterPresent                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Ne fait rien, et c'est tout son role : le seul fait d'avoir ete
+ * traite a deja repousse l'echeance S3server dans uds_handle_request.
+ * Un outil de diagnostic l'emet periodiquement, en general avec le bit
+ * de suppression arme pour ne pas encombrer le bus.
+ */
+static uds_result_t handle_tester_present(uds_context_t *ctx,
+                                          const uint8_t *request,
+                                          uint16_t request_len,
+                                          uint8_t *response,
+                                          uint16_t response_capacity,
+                                          uint16_t *response_len)
+{
+    uint8_t raw_subfunction;
+    uint8_t suppress;
+
+    (void)ctx;
+
+    if (request_len != UDS_TESTER_PRESENT_LEN)
+    {
+        return make_negative_response(UDS_SID_TESTER_PRESENT,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    raw_subfunction = request[1];
+    suppress = (uint8_t)((raw_subfunction & UDS_SUPPRESS_POS_RSP_BIT) != 0u);
+
+    if ((raw_subfunction & UDS_SUBFUNCTION_MASK) != UDS_TESTER_PRESENT_SUBFN)
+    {
+        return make_negative_response(UDS_SID_TESTER_PRESENT,
+                                      UDS_NRC_SUB_FUNCTION_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (suppress != 0u)
+    {
+        *response_len = 0u;
+        return UDS_NO_RESPONSE;
+    }
+
+    if (response_capacity < 2u)
+    {
+        return UDS_ERR_BUFFER_TOO_SMALL;
+    }
+
+    response[0] = (uint8_t)(UDS_SID_TESTER_PRESENT +
+                            UDS_POSITIVE_RESPONSE_OFFSET);
+    response[1] = UDS_TESTER_PRESENT_SUBFN;
+    *response_len = 2u;
+
+    return UDS_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* 0x11 ECUReset                                                       */
+/* ------------------------------------------------------------------ */
+
+static uds_result_t handle_ecu_reset(uds_context_t *ctx,
+                                     const uint8_t *request,
+                                     uint16_t request_len,
+                                     uint8_t *response,
+                                     uint16_t response_capacity,
+                                     uint16_t *response_len)
+{
+    uint8_t reset_type;
+
+    if (request_len != UDS_RESET_REQUEST_LEN)
+    {
+        return make_negative_response(UDS_SID_ECU_RESET,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    reset_type = (uint8_t)(request[1] & UDS_SUBFUNCTION_MASK);
+
+    if ((reset_type != UDS_RESET_HARD) && (reset_type != UDS_RESET_SOFT))
+    {
+        return make_negative_response(UDS_SID_ECU_RESET,
+                                      UDS_NRC_SUB_FUNCTION_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (ctx->ecu_reset == NULL)
+    {
+        return make_negative_response(UDS_SID_ECU_RESET,
+                                      UDS_NRC_SERVICE_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (ctx->ecu_reset(reset_type, ctx->user_ctx) != UDS_OK)
+    {
+        return make_negative_response(UDS_SID_ECU_RESET,
+                                      UDS_NRC_CONDITIONS_NOT_CORRECT,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    /*
+     * Une reinitialisation ramene le calculateur a son etat de
+     * demarrage : session par defaut et securite reverrouillee. Laisser
+     * un acces ouvert en travers d'un reset serait une faille.
+     */
+    ctx->session        = UDS_SESSION_DEFAULT;
+    ctx->security_level = UDS_SECURITY_LOCKED;
+    ctx->seed_pending   = 0u;
+
+    if (response_capacity < 2u)
+    {
+        return UDS_ERR_BUFFER_TOO_SMALL;
+    }
+
+    response[0] = (uint8_t)(UDS_SID_ECU_RESET + UDS_POSITIVE_RESPONSE_OFFSET);
+    response[1] = reset_type;
+    *response_len = 2u;
+
+    return UDS_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* 0x27 SecurityAccess                                                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Generateur de graines.
+ *
+ * Congruentiel lineaire : rapide, deterministe, et NON
+ * cryptographique. Il convient a une demonstration du protocole ; un
+ * calculateur reel doit tirer sa graine d'un generateur materiel, sans
+ * quoi un attaquant peut predire la suite apres quelques observations.
+ * Ce choix est documente plutot que dissimule.
+ */
+static uint32_t next_seed(uds_context_t *ctx)
+{
+    ctx->seed_state = (ctx->seed_state * 1103515245u) + 12345u;
+    return ctx->seed_state ^ 0x5A5A5A5Au;
+}
+
+uint32_t uds_demo_key_from_seed(uint32_t seed)
+{
+    uint32_t k = seed ^ 0xA5A5A5A5u;
+
+    /* Rotation de 3 bits vers la gauche sur 32 bits. */
+    k = (uint32_t)((k << 3) | (k >> 29));
+    k = (uint32_t)(k + 0x3C3C3C3Cu);
+
+    return k;
+}
+
+static uds_result_t handle_security_access(uds_context_t *ctx,
+                                           const uint8_t *request,
+                                           uint16_t request_len,
+                                           uint32_t now_ms,
+                                           uint8_t *response,
+                                           uint16_t response_capacity,
+                                           uint16_t *response_len)
+{
+    uint8_t subfunction;
+
+    if (request_len < 2u)
+    {
+        return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    subfunction = (uint8_t)(request[1] & UDS_SUBFUNCTION_MASK);
+
+    /*
+     * Verrouillage anti-force-brute encore actif : on refuse tout,
+     * y compris une demande de graine, sinon l'attaquant relancerait
+     * simplement un cycle.
+     */
+    if (ctx->locked_out != 0u)
+    {
+        return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                      UDS_NRC_REQUIRED_TIME_DELAY_NOT_EXPIRED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (subfunction == UDS_SECURITY_REQUEST_SEED)
+    {
+        uint32_t seed;
+
+        if (request_len != 2u)
+        {
+            return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                          UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                          response, response_capacity,
+                                          response_len);
+        }
+
+        if (response_capacity < (2u + UDS_SECURITY_SEED_LEN))
+        {
+            return UDS_ERR_BUFFER_TOO_SMALL;
+        }
+
+        /*
+         * Deja deverrouille : la norme prevoit de renvoyer une graine
+         * nulle pour signaler "rien a faire" plutot que de relancer un
+         * echange inutile.
+         */
+        if (ctx->security_level != UDS_SECURITY_LOCKED)
+        {
+            seed = 0u;
+            ctx->seed_pending = 0u;
+        }
+        else
+        {
+            seed = next_seed(ctx);
+            ctx->current_seed = seed;
+            ctx->seed_pending = 1u;
+        }
+
+        response[0] = (uint8_t)(UDS_SID_SECURITY_ACCESS +
+                                UDS_POSITIVE_RESPONSE_OFFSET);
+        response[1] = UDS_SECURITY_REQUEST_SEED;
+        response[2] = (uint8_t)((seed >> 24) & 0xFFu);
+        response[3] = (uint8_t)((seed >> 16) & 0xFFu);
+        response[4] = (uint8_t)((seed >> 8) & 0xFFu);
+        response[5] = (uint8_t)(seed & 0xFFu);
+
+        *response_len = (uint16_t)(2u + UDS_SECURITY_SEED_LEN);
+        return UDS_OK;
+    }
+
+    if (subfunction == UDS_SECURITY_SEND_KEY)
+    {
+        uint32_t received_key;
+        uint32_t expected_key;
+
+        if (request_len != (2u + UDS_SECURITY_KEY_LEN))
+        {
+            return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                          UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                          response, response_capacity,
+                                          response_len);
+        }
+
+        /*
+         * Une cle sans graine en attente est soit une erreur de
+         * sequence, soit un rejeu. Dans les deux cas on refuse : c'est
+         * ce qui empeche de rejouer une cle capturee auparavant.
+         */
+        if (ctx->seed_pending == 0u)
+        {
+            return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                          UDS_NRC_CONDITIONS_NOT_CORRECT,
+                                          response, response_capacity,
+                                          response_len);
+        }
+
+        received_key = (((uint32_t)request[2]) << 24) |
+                       (((uint32_t)request[3]) << 16) |
+                       (((uint32_t)request[4]) << 8)  |
+                       ((uint32_t)request[5]);
+
+        expected_key = uds_demo_key_from_seed(ctx->current_seed);
+
+        if (received_key != expected_key)
+        {
+            ctx->failed_attempts++;
+
+            /*
+             * La graine est consommee des le premier essai rate :
+             * l'attaquant doit en redemander une, ce qui l'empeche de
+             * balayer l'espace des cles contre une graine figee.
+             */
+            ctx->seed_pending = 0u;
+
+            if (ctx->failed_attempts >= UDS_SECURITY_MAX_ATTEMPTS)
+            {
+                ctx->locked_out      = 1u;
+                ctx->lockout_until_ms = now_ms + UDS_SECURITY_LOCKOUT_MS;
+
+                return make_negative_response(
+                    UDS_SID_SECURITY_ACCESS,
+                    UDS_NRC_EXCEED_NUMBER_OF_ATTEMPTS,
+                    response, response_capacity, response_len);
+            }
+
+            return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                          UDS_NRC_INVALID_KEY,
+                                          response, response_capacity,
+                                          response_len);
+        }
+
+        /* Cle correcte. */
+        ctx->security_level  = UDS_SECURITY_LEVEL_1;
+        ctx->failed_attempts = 0u;
+        ctx->seed_pending    = 0u;
+
+        if (response_capacity < 2u)
+        {
+            return UDS_ERR_BUFFER_TOO_SMALL;
+        }
+
+        response[0] = (uint8_t)(UDS_SID_SECURITY_ACCESS +
+                                UDS_POSITIVE_RESPONSE_OFFSET);
+        response[1] = UDS_SECURITY_SEND_KEY;
+        *response_len = 2u;
+
+        return UDS_OK;
+    }
+
+    return make_negative_response(UDS_SID_SECURITY_ACCESS,
+                                  UDS_NRC_SUB_FUNCTION_NOT_SUPPORTED,
+                                  response, response_capacity,
+                                  response_len);
+}
+
+/* ------------------------------------------------------------------ */
+/* 0x19 ReadDTCInformation                                             */
+/* ------------------------------------------------------------------ */
+
+static uds_result_t handle_read_dtc_information(uds_context_t *ctx,
+                                                const uint8_t *request,
+                                                uint16_t request_len,
+                                                uint8_t *response,
+                                                uint16_t response_capacity,
+                                                uint16_t *response_len)
+{
+    uint8_t subfunction;
+    uint8_t status_mask;
+    uint16_t dtc_len = 0u;
+    uds_result_t res;
+
+    if (request_len < 2u)
+    {
+        return make_negative_response(UDS_SID_READ_DTC_INFORMATION,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    subfunction = (uint8_t)(request[1] & UDS_SUBFUNCTION_MASK);
+
+    if (subfunction != UDS_DTC_REPORT_BY_STATUS_MASK)
+    {
+        return make_negative_response(UDS_SID_READ_DTC_INFORMATION,
+                                      UDS_NRC_SUB_FUNCTION_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (request_len != UDS_RDTC_REQUEST_LEN)
+    {
+        return make_negative_response(UDS_SID_READ_DTC_INFORMATION,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (ctx->dtc_read == NULL)
+    {
+        return make_negative_response(UDS_SID_READ_DTC_INFORMATION,
+                                      UDS_NRC_SERVICE_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    status_mask = request[2];
+
+    /* 0x59 + sous-fonction + masque de disponibilite, puis les defauts. */
+    if (response_capacity < 3u)
+    {
+        return UDS_ERR_BUFFER_TOO_SMALL;
+    }
+
+    res = ctx->dtc_read(status_mask,
+                        &response[3],
+                        (uint16_t)(response_capacity - 3u),
+                        &dtc_len,
+                        ctx->user_ctx);
+
+    if (res == UDS_ERR_BUFFER_TOO_SMALL)
+    {
+        return make_negative_response(UDS_SID_READ_DTC_INFORMATION,
+                                      UDS_NRC_RESPONSE_TOO_LONG,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (res != UDS_OK)
+    {
+        return make_negative_response(UDS_SID_READ_DTC_INFORMATION,
+                                      UDS_NRC_CONDITIONS_NOT_CORRECT,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    response[0] = (uint8_t)(UDS_SID_READ_DTC_INFORMATION +
+                            UDS_POSITIVE_RESPONSE_OFFSET);
+    response[1] = UDS_DTC_REPORT_BY_STATUS_MASK;
+    response[2] = UDS_DTC_AVAILABILITY_MASK;
+
+    *response_len = (uint16_t)(3u + dtc_len);
+    return UDS_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* 0x14 ClearDiagnosticInformation                                     */
+/* ------------------------------------------------------------------ */
+
+static uds_result_t handle_clear_diagnostic_information(
+    uds_context_t *ctx,
+    const uint8_t *request,
+    uint16_t request_len,
+    uint8_t *response,
+    uint16_t response_capacity,
+    uint16_t *response_len)
+{
+    uint32_t group;
+
+    if (request_len != UDS_CLEAR_REQUEST_LEN)
+    {
+        return make_negative_response(UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION,
+                                      UDS_NRC_INCORRECT_MESSAGE_LENGTH,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (ctx->dtc_clear == NULL)
+    {
+        return make_negative_response(UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION,
+                                      UDS_NRC_SERVICE_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    /* Le groupe est code sur 3 octets, poids fort en premier. */
+    group = (((uint32_t)request[1]) << 16) |
+            (((uint32_t)request[2]) << 8)  |
+            ((uint32_t)request[3]);
+
+    if (ctx->dtc_clear(group, ctx->user_ctx) != UDS_OK)
+    {
+        return make_negative_response(UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION,
+                                      UDS_NRC_REQUEST_OUT_OF_RANGE,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if (response_capacity < 1u)
+    {
+        return UDS_ERR_BUFFER_TOO_SMALL;
+    }
+
+    response[0] = (uint8_t)(UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION +
+                            UDS_POSITIVE_RESPONSE_OFFSET);
+    *response_len = 1u;
+
+    return UDS_OK;
+}
+
 /* ------------------------------------------------------------------ */
 /* Point d'entree                                                      */
 /* ------------------------------------------------------------------ */
 
 void uds_init(uds_context_t *ctx)
 {
-    if (ctx != NULL)
+    if (ctx == NULL)
     {
-        ctx->session  = UDS_SESSION_DEFAULT;
-        ctx->did_read = NULL;
-        ctx->user_ctx = NULL;
+        return;
     }
+
+    ctx->session          = UDS_SESSION_DEFAULT;
+    ctx->security_level   = UDS_SECURITY_LOCKED;
+    ctx->last_activity_ms = 0u;
+
+    ctx->current_seed     = 0u;
+    ctx->seed_pending     = 0u;
+    ctx->failed_attempts  = 0u;
+    ctx->lockout_until_ms = 0u;
+    ctx->locked_out       = 0u;
+    ctx->seed_state       = 0x12345678u;
+
+    ctx->did_read  = NULL;
+    ctx->dtc_read  = NULL;
+    ctx->dtc_clear = NULL;
+    ctx->ecu_reset = NULL;
+    ctx->user_ctx  = NULL;
 }
 
 void uds_set_did_provider(uds_context_t *ctx,
@@ -372,20 +949,91 @@ void uds_set_did_provider(uds_context_t *ctx,
     }
 }
 
+void uds_set_dtc_provider(uds_context_t *ctx,
+                          uds_dtc_read_fn dtc_read,
+                          uds_dtc_clear_fn dtc_clear)
+{
+    if (ctx != NULL)
+    {
+        ctx->dtc_read  = dtc_read;
+        ctx->dtc_clear = dtc_clear;
+    }
+}
+
+void uds_set_reset_handler(uds_context_t *ctx, uds_ecu_reset_fn ecu_reset)
+{
+    if (ctx != NULL)
+    {
+        ctx->ecu_reset = ecu_reset;
+    }
+}
+
+void uds_seed_entropy(uds_context_t *ctx, uint32_t entropy)
+{
+    if (ctx != NULL)
+    {
+        ctx->seed_state ^= entropy;
+    }
+}
+
+void uds_poll(uds_context_t *ctx, uint32_t now_ms)
+{
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    /*
+     * Fin du verrouillage anti-force-brute. La soustraction non signee
+     * reste correcte au repli de l'horloge 32 bits.
+     */
+    if ((ctx->locked_out != 0u) &&
+        ((uint32_t)(now_ms - ctx->lockout_until_ms) < 0x80000000u))
+    {
+        ctx->locked_out      = 0u;
+        ctx->failed_attempts = 0u;
+    }
+
+    /*
+     * S3server : sans activite, une session privilegiee retombe en
+     * session par defaut et la securite se reverrouille. Une session
+     * ouverte que plus personne ne surveille est une session a fermer.
+     */
+    if (ctx->session != UDS_SESSION_DEFAULT)
+    {
+        if ((uint32_t)(now_ms - ctx->last_activity_ms) >=
+            UDS_S3_SERVER_TIMEOUT_MS)
+        {
+            ctx->session        = UDS_SESSION_DEFAULT;
+            ctx->security_level = UDS_SECURITY_LOCKED;
+            ctx->seed_pending   = 0u;
+        }
+    }
+}
+
 uds_result_t uds_handle_request(uds_context_t *ctx,
                                 const uint8_t *request,
                                 uint16_t request_len,
+                                uint32_t now_ms,
                                 uint8_t *response,
                                 uint16_t response_capacity,
                                 uint16_t *response_len)
 {
     uint8_t sid;
+    const service_rule_t *rule;
 
     if ((ctx == NULL) || (request == NULL) ||
         (response == NULL) || (response_len == NULL))
     {
         return UDS_ERR_NULL_POINTER;
     }
+
+    /*
+     * Les echeances sont evaluees AVANT de traiter la requete : une
+     * session expiree ne doit pas etre sauvee par la requete meme qui
+     * arrive trop tard.
+     */
+    uds_poll(ctx, now_ms);
 
     /*
      * Une requete vide n'a pas de SID. Impossible de fabriquer une
@@ -400,6 +1048,39 @@ uds_result_t uds_handle_request(uds_context_t *ctx,
 
     sid = request[0];
 
+    /* --- Politique d'acces, avant tout traitement du contenu --- */
+    rule = find_rule(sid);
+
+    if (rule == NULL)
+    {
+        return make_negative_response(sid, UDS_NRC_SERVICE_NOT_SUPPORTED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    if ((rule->requires_extended_session != 0u) &&
+        (ctx->session == UDS_SESSION_DEFAULT))
+    {
+        return make_negative_response(
+            sid, UDS_NRC_SERVICE_NOT_SUPPORTED_IN_SESSION,
+            response, response_capacity, response_len);
+    }
+
+    if ((rule->requires_security_unlock != 0u) &&
+        (ctx->security_level == UDS_SECURITY_LOCKED))
+    {
+        return make_negative_response(sid, UDS_NRC_SECURITY_ACCESS_DENIED,
+                                      response, response_capacity,
+                                      response_len);
+    }
+
+    /*
+     * La requete est recevable : elle repousse l'echeance S3server.
+     * Fait apres les controles d'acces, pour qu'une requete refusee ne
+     * maintienne pas une session ouverte gratuitement.
+     */
+    ctx->last_activity_ms = now_ms;
+
     switch (sid)
     {
     case UDS_SID_DIAGNOSTIC_SESSION_CONTROL:
@@ -407,14 +1088,38 @@ uds_result_t uds_handle_request(uds_context_t *ctx,
                                                  response, response_capacity,
                                                  response_len);
 
+    case UDS_SID_ECU_RESET:
+        return handle_ecu_reset(ctx, request, request_len,
+                                response, response_capacity, response_len);
+
+    case UDS_SID_CLEAR_DIAGNOSTIC_INFORMATION:
+        return handle_clear_diagnostic_information(ctx, request, request_len,
+                                                   response, response_capacity,
+                                                   response_len);
+
+    case UDS_SID_READ_DTC_INFORMATION:
+        return handle_read_dtc_information(ctx, request, request_len,
+                                           response, response_capacity,
+                                           response_len);
+
     case UDS_SID_READ_DATA_BY_IDENTIFIER:
         return handle_read_data_by_identifier(ctx, request, request_len,
                                               response, response_capacity,
                                               response_len);
 
+    case UDS_SID_SECURITY_ACCESS:
+        return handle_security_access(ctx, request, request_len, now_ms,
+                                      response, response_capacity,
+                                      response_len);
+
+    case UDS_SID_TESTER_PRESENT:
+        return handle_tester_present(ctx, request, request_len,
+                                     response, response_capacity,
+                                     response_len);
+
     default:
-        return make_negative_response(sid,
-                                      UDS_NRC_SERVICE_NOT_SUPPORTED,
+        /* Inatteignable : find_rule aurait deja refuse. */
+        return make_negative_response(sid, UDS_NRC_SERVICE_NOT_SUPPORTED,
                                       response, response_capacity,
                                       response_len);
     }

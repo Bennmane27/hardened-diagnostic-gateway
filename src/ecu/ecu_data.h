@@ -38,6 +38,26 @@
 /* Etat simule                                                         */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Codes defaut                                                        */
+/* ------------------------------------------------------------------ */
+
+#define ECU_DTC_MAX_COUNT        4u
+
+/* Bits du statut d'un defaut, sous-ensemble d'ISO 14229. */
+#define ECU_DTC_STATUS_TEST_FAILED   0x01u
+#define ECU_DTC_STATUS_CONFIRMED     0x08u
+
+/* Groupe passe a ClearDiagnosticInformation pour tout effacer. */
+#define ECU_DTC_GROUP_ALL        0xFFFFFFu
+
+typedef struct
+{
+    uint32_t code;     /* 3 octets significatifs */
+    uint8_t  status;
+    uint8_t  active;   /* 0 = efface */
+} ecu_dtc_t;
+
 typedef struct
 {
     uint16_t engine_rpm;         /* tr/min                        */
@@ -46,6 +66,9 @@ typedef struct
     uint16_t battery_mv;         /* millivolts                    */
 
     uint32_t tick;               /* compteur d'evolution          */
+
+    ecu_dtc_t dtc[ECU_DTC_MAX_COUNT];
+    uint8_t   reset_count;
 } ecu_data_t;
 
 /* Valeurs de depart, moteur au ralenti. */
@@ -72,7 +95,26 @@ uds_result_t ecu_data_read_did(uint16_t did,
                                uint16_t *out_len,
                                void *user_ctx);
 
+/*
+ * Lecture des defauts, signature imposee par uds_dtc_read_fn.
+ * Ecrit des enregistrements de 4 octets : 3 de code, 1 de statut.
+ */
+uds_result_t ecu_data_read_dtc(uint8_t status_mask,
+                               uint8_t *out,
+                               uint16_t out_capacity,
+                               uint16_t *out_len,
+                               void *user_ctx);
+
+/* Effacement des defauts, signature imposee par uds_dtc_clear_fn. */
+uds_result_t ecu_data_clear_dtc(uint32_t group_of_dtc, void *user_ctx);
+
+/* Reinitialisation du calculateur, signature imposee par uds_ecu_reset_fn. */
+uds_result_t ecu_data_reset(uint8_t reset_type, void *user_ctx);
+
 /* Libelle lisible d'un DID, pour les traces. */
 const char *ecu_data_did_to_string(uint16_t did);
+
+/* Libelle lisible d'un code defaut. */
+const char *ecu_data_dtc_to_string(uint32_t code);
 
 #endif /* ECU_DATA_H */

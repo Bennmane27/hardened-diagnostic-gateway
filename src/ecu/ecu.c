@@ -82,6 +82,15 @@ int main(int argc, char **argv)
     ecu_data_init(&g_data);
     uds_init(&g_uds);
     uds_set_did_provider(&g_uds, ecu_data_read_did, &g_data);
+    uds_set_dtc_provider(&g_uds, ecu_data_read_dtc, ecu_data_clear_dtc);
+    uds_set_reset_handler(&g_uds, ecu_data_reset);
+
+    /*
+     * Le generateur de graines de SecurityAccess est deterministe.
+     * Sans entropie, deux executions produiraient la meme suite. Ce
+     * n'est pas cryptographique pour autant : voir docs/security.md.
+     */
+    uds_seed_entropy(&g_uds, can_monotonic_ms());
 
     printf("=== ECU virtuel ===\n");
     printf("Interface   : %s\n", CAN_INTERFACE);
@@ -104,13 +113,19 @@ int main(int argc, char **argv)
         }
         if (r == 0)
         {
+            /*
+             * Bus silencieux : c'est le moment de laisser expirer ce
+             * qui doit expirer, session etendue comprise.
+             */
+            uds_poll(&g_uds, can_monotonic_ms());
             continue;
         }
 
         /* Les grandeurs simulees avancent a chaque requete traitee. */
         ecu_data_tick(&g_data);
 
-        printf("\n[requete %u octets]\n", request_len);
+        printf("\n[requete %u octets] %s\n",
+               request_len, uds_sid_to_string(request[0]));
 
         {
             uint8_t response[UDS_MAX_RESPONSE_SIZE];
@@ -120,6 +135,7 @@ int main(int argc, char **argv)
             uds_res = uds_handle_request(&g_uds,
                                          request,
                                          request_len,
+                                         can_monotonic_ms(),
                                          response,
                                          (uint16_t)sizeof(response),
                                          &response_len);
@@ -144,13 +160,19 @@ int main(int argc, char **argv)
                 printf("  UDS : REFUS service 0x%02X, NRC 0x%02X (%s)\n",
                        response[1], response[2],
                        uds_nrc_to_string(response[2]));
+                printf("  Session : %s | Securite : %s\n",
+                       uds_session_to_string(g_uds.session),
+                       (g_uds.security_level == UDS_SECURITY_LOCKED)
+                           ? "verrouillee" : "deverrouillee");
             }
             else
             {
                 printf("  UDS : reponse positive 0x%02X, %u octets\n",
                        response[0], response_len);
-                printf("  Session : %s\n",
-                       uds_session_to_string(g_uds.session));
+                printf("  Session : %s | Securite : %s\n",
+                       uds_session_to_string(g_uds.session),
+                       (g_uds.security_level == UDS_SECURITY_LOCKED)
+                           ? "verrouillee" : "deverrouillee");
             }
 
             if (diag_link_send(&g_link, response, response_len) != 0)

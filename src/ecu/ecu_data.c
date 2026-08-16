@@ -46,6 +46,28 @@ void ecu_data_init(ecu_data_t *data)
     data->coolant_temp_c    = 21;      /* moteur froid */
     data->battery_mv        = 12600u;  /* 12,6 V       */
     data->tick              = 0u;
+    data->reset_count       = 0u;
+
+    /*
+     * Deux defauts sont presents des le depart pour que la lecture ait
+     * quelque chose a montrer. Un troisieme apparaitra a chaud.
+     */
+    data->dtc[0].code   = 0x011700u;  /* capteur de temperature */
+    data->dtc[0].status = ECU_DTC_STATUS_TEST_FAILED |
+                          ECU_DTC_STATUS_CONFIRMED;
+    data->dtc[0].active = 1u;
+
+    data->dtc[1].code   = 0xC12345u;  /* defaut de communication */
+    data->dtc[1].status = ECU_DTC_STATUS_CONFIRMED;
+    data->dtc[1].active = 1u;
+
+    data->dtc[2].code   = 0x016200u;  /* sous-tension */
+    data->dtc[2].status = 0u;
+    data->dtc[2].active = 0u;
+
+    data->dtc[3].code   = 0x010100u;  /* debitmetre d'air */
+    data->dtc[3].status = 0u;
+    data->dtc[3].active = 0u;
 }
 
 void ecu_data_tick(ecu_data_t *data)
@@ -70,6 +92,133 @@ void ecu_data_tick(ecu_data_t *data)
     if (data->coolant_temp_c < 90)
     {
         data->coolant_temp_c = (int16_t)(data->coolant_temp_c + 1);
+    }
+
+    /*
+     * Un defaut de sous-tension apparait si la batterie descend sous un
+     * seuil. Le calculateur genere donc ses propres codes plutot que de
+     * porter une liste figee.
+     */
+    if ((data->battery_mv < 12400u) && (data->dtc[2].active == 0u))
+    {
+        data->dtc[2].status = ECU_DTC_STATUS_TEST_FAILED |
+                              ECU_DTC_STATUS_CONFIRMED;
+        data->dtc[2].active = 1u;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Defauts                                                             */
+/* ------------------------------------------------------------------ */
+
+uds_result_t ecu_data_read_dtc(uint8_t status_mask,
+                               uint8_t *out,
+                               uint16_t out_capacity,
+                               uint16_t *out_len,
+                               void *user_ctx)
+{
+    const ecu_data_t *data = (const ecu_data_t *)user_ctx;
+    uint16_t written = 0u;
+    uint8_t i;
+
+    if ((out == NULL) || (out_len == NULL) || (data == NULL))
+    {
+        return UDS_ERR_NULL_POINTER;
+    }
+
+    for (i = 0u; i < ECU_DTC_MAX_COUNT; i++)
+    {
+        if (data->dtc[i].active == 0u)
+        {
+            continue;
+        }
+
+        /* Le client ne veut que les defauts recoupant son masque. */
+        if ((data->dtc[i].status & status_mask) == 0u)
+        {
+            continue;
+        }
+
+        /* Capacite verifiee AVANT ecriture, sans exception. */
+        if ((uint32_t)(written + 4u) > (uint32_t)out_capacity)
+        {
+            return UDS_ERR_BUFFER_TOO_SMALL;
+        }
+
+        out[written]     = (uint8_t)((data->dtc[i].code >> 16) & 0xFFu);
+        out[written + 1] = (uint8_t)((data->dtc[i].code >> 8) & 0xFFu);
+        out[written + 2] = (uint8_t)(data->dtc[i].code & 0xFFu);
+        out[written + 3] = data->dtc[i].status;
+
+        written = (uint16_t)(written + 4u);
+    }
+
+    *out_len = written;
+    return UDS_OK;
+}
+
+uds_result_t ecu_data_clear_dtc(uint32_t group_of_dtc, void *user_ctx)
+{
+    ecu_data_t *data = (ecu_data_t *)user_ctx;
+    uint8_t i;
+    uint8_t matched = 0u;
+
+    if (data == NULL)
+    {
+        return UDS_ERR_NULL_POINTER;
+    }
+
+    for (i = 0u; i < ECU_DTC_MAX_COUNT; i++)
+    {
+        if ((group_of_dtc == ECU_DTC_GROUP_ALL) ||
+            (data->dtc[i].code == group_of_dtc))
+        {
+            data->dtc[i].active = 0u;
+            data->dtc[i].status = 0u;
+            matched = 1u;
+        }
+    }
+
+    /*
+     * Effacer un groupe qui n'existe pas est une requete hors domaine,
+     * pas un succes silencieux.
+     */
+    if (matched == 0u)
+    {
+        return UDS_ERR_DID_NOT_FOUND;
+    }
+
+    return UDS_OK;
+}
+
+uds_result_t ecu_data_reset(uint8_t reset_type, void *user_ctx)
+{
+    ecu_data_t *data = (ecu_data_t *)user_ctx;
+    uint8_t previous_resets;
+
+    if (data == NULL)
+    {
+        return UDS_ERR_NULL_POINTER;
+    }
+
+    (void)reset_type;
+
+    previous_resets = data->reset_count;
+    ecu_data_init(data);
+    data->reset_count = (uint8_t)(previous_resets + 1u);
+
+    return UDS_OK;
+}
+
+const char *ecu_data_dtc_to_string(uint32_t code)
+{
+    switch (code)
+    {
+    case 0x011700u: return "capteur de temperature moteur";
+    case 0xC12345u: return "defaut de communication reseau";
+    case 0x016200u: return "sous-tension batterie";
+    case 0x010100u: return "debitmetre d'air";
+    default:        return "defaut inconnu";
     }
 }
 
