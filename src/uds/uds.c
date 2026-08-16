@@ -131,8 +131,8 @@ const char *uds_result_to_string(uds_result_t result)
 static uds_result_t make_negative_response(uint8_t sid,
                                            uint8_t nrc,
                                            uint8_t *response,
-                                           uint8_t response_capacity,
-                                           uint8_t *response_len)
+                                           uint16_t response_capacity,
+                                           uint16_t *response_len)
 {
     if (response_capacity < UDS_NEGATIVE_RESPONSE_LEN)
     {
@@ -155,10 +155,10 @@ static uds_result_t make_negative_response(uint8_t sid,
 static uds_result_t handle_diagnostic_session_control(
     uds_context_t *ctx,
     const uint8_t *request,
-    uint8_t request_len,
+    uint16_t request_len,
     uint8_t *response,
-    uint8_t response_capacity,
-    uint8_t *response_len)
+    uint16_t response_capacity,
+    uint16_t *response_len)
 {
     uint8_t raw_subfunction;
     uint8_t subfunction;
@@ -248,13 +248,13 @@ static uds_result_t handle_diagnostic_session_control(
 static uds_result_t handle_read_data_by_identifier(
     uds_context_t *ctx,
     const uint8_t *request,
-    uint8_t request_len,
+    uint16_t request_len,
     uint8_t *response,
-    uint8_t response_capacity,
-    uint8_t *response_len)
+    uint16_t response_capacity,
+    uint16_t *response_len)
 {
     uint16_t did;
-    uint8_t data_len = 0u;
+    uint16_t data_len = 0u;
     uds_result_t provider_res;
 
     /*
@@ -305,7 +305,7 @@ static uds_result_t handle_read_data_by_identifier(
      */
     provider_res = ctx->did_read(did,
                                  &response[UDS_RDBI_HEADER_LEN],
-                                 (uint8_t)(response_capacity -
+                                 (uint16_t)(response_capacity -
                                            UDS_RDBI_HEADER_LEN),
                                  &data_len,
                                  ctx->user_ctx);
@@ -318,7 +318,7 @@ static uds_result_t handle_read_data_by_identifier(
         response[1] = (uint8_t)((did >> 8) & 0xFFu);
         response[2] = (uint8_t)(did & 0xFFu);
 
-        *response_len = (uint8_t)(UDS_RDBI_HEADER_LEN + data_len);
+        *response_len = (uint16_t)(UDS_RDBI_HEADER_LEN + data_len);
         return UDS_OK;
 
     case UDS_ERR_DID_NOT_FOUND:
@@ -374,10 +374,10 @@ void uds_set_did_provider(uds_context_t *ctx,
 
 uds_result_t uds_handle_request(uds_context_t *ctx,
                                 const uint8_t *request,
-                                uint8_t request_len,
+                                uint16_t request_len,
                                 uint8_t *response,
-                                uint8_t response_capacity,
-                                uint8_t *response_len)
+                                uint16_t response_capacity,
+                                uint16_t *response_len)
 {
     uint8_t sid;
 

@@ -36,7 +36,7 @@ static void check(int condition, const char *what)
  * annoncee par l'API.
  */
 static uds_result_t run(const uint8_t *req, uint8_t req_len,
-                        uint8_t *resp, uint8_t *resp_len,
+                        uint8_t *resp, uint16_t *resp_len,
                         uds_context_t *ctx_out)
 {
     uds_context_t ctx;
@@ -79,7 +79,7 @@ static void test_init(void)
 static void test_dsc_positive(void)
 {
     uint8_t resp[UDS_MAX_RESPONSE_SIZE];
-    uint8_t len;
+    uint16_t len;
     uds_context_t ctx;
 
     printf("[2] DiagnosticSessionControl : reponses positives\n");
@@ -114,7 +114,7 @@ static void test_dsc_positive(void)
 static void test_suppress_bit(void)
 {
     uint8_t resp[UDS_MAX_RESPONSE_SIZE];
-    uint8_t len;
+    uint16_t len;
     uds_context_t ctx;
 
     printf("[3] suppressPosRspMsgIndicationBit (bit 7)\n");
@@ -149,7 +149,7 @@ static void test_suppress_bit(void)
 static void test_negative_responses(void)
 {
     uint8_t resp[UDS_MAX_RESPONSE_SIZE];
-    uint8_t len;
+    uint16_t len;
 
     printf("[4] Reponses negatives\n");
 
@@ -206,7 +206,7 @@ static void test_negative_responses(void)
 static void test_edge_cases(void)
 {
     uint8_t resp[UDS_MAX_RESPONSE_SIZE];
-    uint8_t len;
+    uint16_t len;
     uds_context_t ctx;
 
     printf("[5] Cas limites\n");
@@ -317,7 +317,7 @@ static void test_edge_cases(void)
 static int g_provider_calls = 0;
 
 static uds_result_t fake_did_read(uint16_t did, uint8_t *out,
-                                  uint8_t out_capacity, uint8_t *out_len,
+                                  uint16_t out_capacity, uint16_t *out_len,
                                   void *user_ctx)
 {
     (void)user_ctx;
@@ -337,12 +337,18 @@ static uds_result_t fake_did_read(uint16_t did, uint8_t *out,
 
     if (did == FAKE_DID_HUGE)
     {
-        /* Valeur connue mais trop grande pour le transport. */
-        if (out_capacity < 20u)
+        /* Valeur connue mais volumineuse : 64 octets. */
+        uint16_t i;
+
+        if (out_capacity < 64u)
         {
             return UDS_ERR_BUFFER_TOO_SMALL;
         }
-        *out_len = 20u;
+        for (i = 0u; i < 64u; i++)
+        {
+            out[i] = (uint8_t)i;
+        }
+        *out_len = 64u;
         return UDS_OK;
     }
 
@@ -352,7 +358,7 @@ static uds_result_t fake_did_read(uint16_t did, uint8_t *out,
 static void test_read_data_by_identifier(void)
 {
     uint8_t resp[UDS_MAX_RESPONSE_SIZE];
-    uint8_t len;
+    uint16_t len;
     uds_context_t ctx;
 
     printf("[6] ReadDataByIdentifier\n");
@@ -392,17 +398,31 @@ static void test_read_data_by_identifier(void)
         check(resp[2] == UDS_NRC_REQUEST_OUT_OF_RANGE, "NRC 0x31");
     }
 
-    /*
-     * DID connu mais valeur trop grande pour le transport actuel.
-     * La limite du reseau doit remonter comme responseTooLong, jamais
-     * comme une troncature silencieuse.
-     */
+    /* Valeur volumineuse : elle passe si le tampon est assez grand. */
     {
         const uint8_t req[] = { 0x22, 0x56, 0x78 };
         check(uds_handle_request(&ctx, req, 3, resp, sizeof(resp), &len)
-              == UDS_OK, "DID trop grand traite");
-        check(resp[0] == 0x7F && resp[1] == 0x22, "7F 22");
-        check(resp[2] == UDS_NRC_RESPONSE_TOO_LONG, "NRC 0x14 responseTooLong");
+              == UDS_OK, "valeur de 64 octets acceptee");
+        check(len == 67u, "3 octets d'en-tete + 64 de donnees");
+        check(resp[0] == 0x62, "reponse positive");
+    }
+
+    /*
+     * Meme requete, mais avec un tampon de reponse volontairement
+     * etroit : la valeur ne tient plus. La limite du transport doit
+     * remonter comme responseTooLong, jamais comme une troncature
+     * silencieuse. C'est ce qui se passe quand un VIN de 17 octets est
+     * demande a un transport qui ne sait emettre que 7 octets.
+     */
+    {
+        const uint8_t req[] = { 0x22, 0x56, 0x78 };
+        uint8_t small[8];
+
+        check(uds_handle_request(&ctx, req, 3, small, sizeof(small), &len)
+              == UDS_OK, "DID trop grand pour le tampon traite");
+        check(small[0] == 0x7F && small[1] == 0x22, "7F 22");
+        check(small[2] == UDS_NRC_RESPONSE_TOO_LONG,
+              "NRC 0x14 responseTooLong");
         check(len == 3u, "la reponse negative reste de 3 octets");
     }
 

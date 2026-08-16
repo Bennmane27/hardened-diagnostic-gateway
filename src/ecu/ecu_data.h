@@ -68,8 +68,8 @@ void ecu_data_tick(ecu_data_t *data);
  */
 uds_result_t ecu_data_read_did(uint16_t did,
                                uint8_t *out,
-                               uint8_t out_capacity,
-                               uint8_t *out_len,
+                               uint16_t out_capacity,
+                               uint16_t *out_len,
                                void *user_ctx);
 
 /* Libelle lisible d'un DID, pour les traces. */

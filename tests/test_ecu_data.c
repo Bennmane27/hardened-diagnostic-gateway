@@ -88,7 +88,7 @@ static void test_read_did(void)
 {
     ecu_data_t data;
     uint8_t buf[32];
-    uint8_t len;
+    uint16_t len;
 
     printf("[2] Lecture des identifiants\n");
 
@@ -191,7 +191,7 @@ static void test_capacity_sweep(void)
         for (cap = 0u; cap <= 20u; cap++)
         {
             uint8_t *buf = (uint8_t *)malloc(cap ? cap : 1u);
-            uint8_t len = 0xFFu;
+            uint16_t len = 0xFFu;
             uds_result_t res;
 
             res = ecu_data_read_did(dids[d], buf, cap, &len, &data);

@@ -45,22 +45,26 @@ These are load-bearing. Violating one silently undoes the point of the project.
 
 ## 3. Current state
 
-**Last updated:** milestone M08 complete.
+**Last updated:** milestones M11–M18 complete (ISO-TP multi-frame + timers).
 
 ### Implemented
 
 | Layer | Status |
 |---|---|
-| SocketCAN transport | `ecu.c`, `tester.c` — raw CAN sockets on `vcan0` |
-| ISO-TP | Single Frame encode/decode, full validation |
+| SocketCAN transport | `src/platform/socketcan/` — the only Linux-dependent module |
+| Diagnostic link | `src/platform/diag_link.c` — ISO-TP session driving loop |
+| ISO-TP | SF, FF, CF, FC, reassembly, sequence numbers, `N_Bs` / `N_Cr` |
 | UDS | `0x10` DiagnosticSessionControl, `0x22` ReadDataByIdentifier, negative responses |
 | Virtual ECU | Simulated sensors + static identification, DID provider callback |
-| Tests | 3 suites, ASan + UBSan, 2576 checks |
+| Tests | 4 suites, ASan + UBSan, 7493 checks |
+
+The VIN (17 bytes) is now readable end to end over a real multi-frame
+transfer — `10 14` / `30 00 00` / `21` / `22` observed on the bus.
 
 ### Not yet implemented
 
-ISO-TP multi-frame (FF/FC/CF), any ISO-TP timer, session access rules,
-`TesterPresent`, DTCs, SecurityAccess, fuzzer, CI, CAN FD, DoIP.
+Session access rules, `TesterPresent`, `ECUReset`, DTCs, SecurityAccess,
+fuzzer, CI, static analysis, CAN FD, DoIP.
 
 ---
 
@@ -96,6 +100,37 @@ It cannot be transported by a Single Frame. Rather than shorten it to make the
 demo pass, the server answers `7F 22 14` *responseTooLong* — the code ISO 14229
 defines for exactly this situation. The failure is the feature: it is what makes
 multi-frame a demonstrated need rather than a checkbox.
+
+### D9 — The SocketCAN layer was built when a second caller appeared
+
+D2 deferred it and named the trigger: a second backend or a second
+caller with the same non-trivial logic. Multi-frame produced exactly
+that — the ECU and the tester both needed an identical loop mixing
+reception, flow control emission and transmission progress, differing
+only in which CAN identifier they send on. `src/platform/` now holds
+`can_socket` (raw transport) and `diag_link` (the ISO-TP session loop).
+Both applications shrank to their actual job.
+
+### D10 — Time is a parameter, never read inside the protocol layers
+
+`isotp_rx_process`, `isotp_tx_poll` and friends take `now_ms` as an
+argument. The protocol code never calls `clock_gettime`. Two payoffs:
+the timer tests advance the clock by hand and run instantly instead of
+sleeping for seconds, and the port to a microcontroller does not need a
+POSIX clock. `can_monotonic_ms()` lives in the platform layer where it
+belongs.
+
+Monotonic, not wall clock: a protocol timer must never jump backwards
+because someone corrected the system time. Elapsed time is computed as
+`(uint32_t)(now - then)`, which stays correct across the 32-bit
+wraparound at 49 days — and there is a test for it.
+
+### D11 — An oversized First Frame is answered, not ignored
+
+A First Frame announcing more than the reassembly buffer gets a Flow
+Control with `FlowStatus = Overflow` and no memory is reserved. Silently
+dropping it would leave the sender waiting for its own timeout; trusting
+it would be the buffer overflow the project exists to prevent.
 
 ### D5 — Makefile, not CMake
 
@@ -176,18 +211,18 @@ Status: `[x]` done · `[>]` in progress · `[ ]` not started
 ```
 [x] M01  ISO-TP Single Frame module
 [x] M02  Single Frame unit tests
-[~] M03  SocketCAN abstraction            deferred, see D2
+[x] M03  SocketCAN abstraction            built when justified, see D9
 [x] M04  UDS module extraction
 [x] M05  UDS negative responses
 [x] M08  ReadDataByIdentifier + ECU data model
-[ ] M11  ISO-TP First Frame parsing
-[ ] M12  ISO-TP Flow Control
-[ ] M13  ISO-TP Consecutive Frame RX
-[ ] M14  ISO-TP multi-frame reassembly
-[ ] M15  ISO-TP multi-frame TX
-[ ] M16  Sequence error handling
-[ ] M17  Timeout abstraction (injectable clock)
-[ ] M18  Timeout tests (N_Bs, N_Cr)
+[x] M11  ISO-TP First Frame parsing
+[x] M12  ISO-TP Flow Control
+[x] M13  ISO-TP Consecutive Frame RX
+[x] M14  ISO-TP multi-frame reassembly
+[x] M15  ISO-TP multi-frame TX
+[x] M16  Sequence error handling
+[x] M17  Timeout abstraction (injectable clock)
+[x] M18  Timeout tests (N_Bs, N_Cr)
 [ ] M06  UDS session access rules
 [ ] M07  TesterPresent + session timeout
 [ ] M09  ECUReset

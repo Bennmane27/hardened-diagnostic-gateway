@@ -87,8 +87,8 @@ void ecu_data_tick(ecu_data_t *data)
 static uds_result_t emit_bytes(const uint8_t *src,
                                uint8_t src_len,
                                uint8_t *out,
-                               uint8_t out_capacity,
-                               uint8_t *out_len)
+                               uint16_t out_capacity,
+                               uint16_t *out_len)
 {
     uint8_t i;
 
@@ -109,8 +109,8 @@ static uds_result_t emit_bytes(const uint8_t *src,
 /* Entier 16 bits, poids fort en premier (convention UDS). */
 static uds_result_t emit_u16(uint16_t value,
                              uint8_t *out,
-                             uint8_t out_capacity,
-                             uint8_t *out_len)
+                             uint16_t out_capacity,
+                             uint16_t *out_len)
 {
     uint8_t buf[2];
 
@@ -122,8 +122,8 @@ static uds_result_t emit_u16(uint16_t value,
 
 uds_result_t ecu_data_read_did(uint16_t did,
                                uint8_t *out,
-                               uint8_t out_capacity,
-                               uint8_t *out_len,
+                               uint16_t out_capacity,
+                               uint16_t *out_len,
                                void *user_ctx)
 {
     const ecu_data_t *data = (const ecu_data_t *)user_ctx;

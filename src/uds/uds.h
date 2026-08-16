@@ -82,11 +82,14 @@
 /*
  * Taille maximale d'une reponse produite par ce module.
  *
- * Bornee a 7 octets parce que le transport ne sait aujourd'hui emettre
- * qu'une ISO-TP Single Frame. Cette limite disparaitra avec le
- * multi-frame ; elle est explicite plutot que subie.
+ * Depuis que le transport sait segmenter, la limite n'est plus celle
+ * d'une trame CAN mais celle que l'on choisit de reserver. 512 octets
+ * couvrent largement les services implementes ; redefinissable a la
+ * compilation pour une cible a memoire contrainte.
  */
-#define UDS_MAX_RESPONSE_SIZE                7u
+#ifndef UDS_MAX_RESPONSE_SIZE
+#define UDS_MAX_RESPONSE_SIZE                512u
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Sessions                                                            */
@@ -103,13 +106,6 @@ typedef enum
     UDS_SESSION_EXTENDED    = 0x03
 } uds_session_t;
 
-/*
- * Contexte serveur.
- *
- * Volontairement minimal a ce stade : il ne porte que la session
- * courante. Le compteur de securite, l'horodatage de derniere activite
- * et la machine a etats complete viendront avec leurs services.
- */
 /* ------------------------------------------------------------------ */
 /* Resultats                                                           */
 /* ------------------------------------------------------------------ */
@@ -151,8 +147,8 @@ typedef enum
  */
 typedef uds_result_t (*uds_did_read_fn)(uint16_t did,
                                         uint8_t *out,
-                                        uint8_t out_capacity,
-                                        uint8_t *out_len,
+                                        uint16_t out_capacity,
+                                        uint16_t *out_len,
                                         void *user_ctx);
 
 typedef struct
@@ -203,10 +199,10 @@ void uds_set_did_provider(uds_context_t *ctx,
  */
 uds_result_t uds_handle_request(uds_context_t *ctx,
                                 const uint8_t *request,
-                                uint8_t request_len,
+                                uint16_t request_len,
                                 uint8_t *response,
-                                uint8_t response_capacity,
-                                uint8_t *response_len);
+                                uint16_t response_capacity,
+                                uint16_t *response_len);
 
 /* Libelles pour les traces. Aucune allocation. */
 const char *uds_session_to_string(uds_session_t session);
