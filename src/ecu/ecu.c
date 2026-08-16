@@ -42,6 +42,9 @@ int main(void)
     }
 
     // 3. Associer le socket a l'interface CAN
+    // memset : le reste de la structure doit etre a zero, pas du contenu
+    // de pile indetermine.
+    memset(&addr, 0, sizeof(addr));
     addr.can_family = AF_CAN;
     addr.can_ifindex = ifr.ifr_ifindex;
 
