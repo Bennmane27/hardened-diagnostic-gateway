@@ -9,6 +9,13 @@ le texte et n'est pas selectionnable. Un SVG anime tient dans quelques
 dizaines de kilooctets, reste net a toute taille, et GitHub l'affiche
 directement dans un README via une balise <img>.
 
+Pourquoi SMIL et pas une animation CSS : un SVG charge dans une balise
+<img> est un document isole, et plusieurs visionneuses n'executent pas
+sa feuille de style. Les elements <animate> de SVG, eux, sont interpretes
+par le moteur SVG lui-meme. Pour la meme raison, aucune couleur ni police
+ne passe par une classe CSS : tout est en attributs de presentation, donc
+le fichier reste correct meme si <style> est ignore ou filtre.
+
 Aucune dependance : uniquement la bibliotheque standard.
 
 Usage :
@@ -125,38 +132,37 @@ def render(frames, total, cols, rows, char_w, line_h, font_size, hold):
     height = int(rows * line_h + 2 * pad_y + chrome_h)
     duration = total + hold
 
-    css = [
-        f".t{{font-family:'SFMono-Regular',Consolas,'DejaVu Sans Mono',"
-        f"monospace;font-size:{font_size}px;white-space:pre}}",
-        ".f{visibility:hidden}",
-    ]
-    for name, colour in THEME.items():
-        css.append(f".{name}{{fill:{colour}}}")
-
     body = []
     for index, (when, lines) in enumerate(frames):
         end = frames[index + 1][0] if index + 1 < len(frames) else duration
-        start_pct = 100.0 * when / duration
-        end_pct = 100.0 * end / duration
 
-        css.append(
-            f"#f{index}{{animation:a{index} {duration:.2f}s infinite}}"
-        )
-        css.append(
-            f"@keyframes a{index}{{"
-            f"0%,{start_pct:.4f}%{{visibility:hidden}}"
-            f"{start_pct:.4f}%,{end_pct:.4f}%{{visibility:visible}}"
-            f"{end_pct:.4f}%,100%{{visibility:hidden}}}}"
-        )
+        start_f = max(0.0, min(1.0, when / duration))
+        end_f = max(0.0, min(1.0, end / duration))
 
-        parts = [f'<g class="f" id="f{index}">']
+        # keyTimes doit commencer a 0 et croitre. Les images de debut et
+        # de fin n'ont donc que deux etapes au lieu de trois.
+        if start_f <= 0.0:
+            values, key_times = "inline;none", f"0;{end_f:.6f}"
+        elif end_f >= 1.0:
+            values, key_times = "none;inline", f"0;{start_f:.6f}"
+        else:
+            values = "none;inline;none"
+            key_times = f"0;{start_f:.6f};{end_f:.6f}"
+
+        parts = [
+            f'<g display="none">'
+            f'<animate attributeName="display" calcMode="discrete" '
+            f'values="{values}" keyTimes="{key_times}" '
+            f'dur="{duration:.2f}s" repeatCount="indefinite"/>'
+        ]
         for row, line in enumerate(lines):
             if not line.strip():
                 continue
             y = pad_y + chrome_h + (row + 1) * line_h - 4
+            colour = THEME[classify(line)]
             parts.append(
-                f'<text class="t {classify(line)}" x="{pad_x}" '
-                f'y="{y:.0f}">{escape(line)}</text>'
+                f'<text x="{pad_x}" y="{y:.0f}" fill="{colour}">'
+                f"{escape(line)}</text>"
             )
         parts.append("</g>")
         body.append("".join(parts))
@@ -166,10 +172,12 @@ def render(frames, total, cols, rows, char_w, line_h, font_size, hold):
         for i, c in enumerate(("#f85149", "#d29922", "#3fb950"))
     )
 
+    font = ("font-family=\"SFMono-Regular,Consolas,'DejaVu Sans Mono',monospace\" "
+            f'font-size="{font_size}" xml:space="preserve"')
+
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
         f'height="{height}" viewBox="0 0 {width} {height}">'
-        f"<style>{''.join(css)}</style>"
         f'<rect width="{width}" height="{height}" rx="8" fill="{THEME["bg"]}"/>'
         f'<rect width="{width}" height="{chrome_h}" rx="8" '
         f'fill="{THEME["chrome"]}"/>'
@@ -177,8 +185,10 @@ def render(frames, total, cols, rows, char_w, line_h, font_size, hold):
         f'fill="{THEME["chrome"]}"/>'
         f"{dots}"
         f'<text x="{width / 2:.0f}" y="21" text-anchor="middle" '
-        f'class="t dim" font-size="12">hardened-diagnostic-gateway</text>'
-        f"{''.join(body)}"
+        f'fill="{THEME["dim"]}" font-size="12" '
+        f"font-family=\"SFMono-Regular,Consolas,monospace\">"
+        f"hardened-diagnostic-gateway</text>"
+        f"<g {font}>{''.join(body)}</g>"
         "</svg>"
     )
 

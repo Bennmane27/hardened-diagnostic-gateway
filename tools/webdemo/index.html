@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hardened Diagnostic Gateway — console</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#11151c; --chrome:#1c2128; --line:#242c37;
+    --fg:#c9d1d9; --dim:#8b949e; --accent:#58a6ff;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --cmd:#a371f7;
+    --mono:'SFMono-Regular',Consolas,'DejaVu Sans Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,'Segoe UI',Roboto,sans-serif; font-size:14px;
+  }
+
+  header{
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding:12px 18px; background:var(--chrome);
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;
+  }
+  header h1{font-size:15px; margin:0; font-weight:600; letter-spacing:.2px}
+  header h1 span{color:var(--dim); font-weight:400}
+
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-left:auto}
+  .chip{
+    font-family:var(--mono); font-size:11.5px; padding:4px 9px;
+    border-radius:999px; border:1px solid var(--line); background:#0d1117;
+    color:var(--dim); white-space:nowrap;
+  }
+  .chip.ok{color:var(--ok); border-color:#1d3b26}
+  .chip.bad{color:var(--bad); border-color:#4a1f1d}
+
+  .bar{
+    display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+    padding:12px 18px; border-bottom:1px solid var(--line);
+  }
+
+  button{
+    font:inherit; font-size:12.5px; padding:6px 12px; border-radius:6px;
+    border:1px solid var(--line); background:#1a2029; color:var(--fg);
+    cursor:pointer; transition:.12s;
+  }
+  button:hover:not(:disabled){background:#242c37; border-color:#3d4757}
+  button:disabled{opacity:.4; cursor:not-allowed}
+  button.primary{background:#1f6feb; border-color:#1f6feb; color:#fff; font-weight:600}
+  button.primary:hover:not(:disabled){background:#388bfd}
+  button.danger{color:var(--bad); border-color:#4a1f1d}
+  button.tiny{padding:3px 8px; font-size:11px}
+
+  .grid{
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px; padding:12px 18px 18px;
+  }
+  @media (max-width:1100px){ .grid{grid-template-columns:1fr} }
+
+  .pane{
+    display:flex; flex-direction:column; background:var(--panel);
+    border:1px solid var(--line); border-radius:8px; overflow:hidden;
+    min-height:340px;
+  }
+  .pane.tall{min-height:440px}
+
+  .pane-head{
+    display:flex; align-items:center; gap:8px; padding:8px 12px;
+    background:var(--chrome); border-bottom:1px solid var(--line);
+  }
+  .dot{width:8px; height:8px; border-radius:50%; background:#3d4757; flex:none}
+  .dot.on{background:var(--ok); box-shadow:0 0 7px #3fb95088}
+  .pane-title{font-weight:600; font-size:12.5px}
+  .pane-sub{color:var(--dim); font-size:11.5px; font-family:var(--mono)}
+  .pane-actions{margin-left:auto; display:flex; gap:6px}
+
+  .term{
+    flex:1; overflow:auto; padding:10px 12px; margin:0;
+    font-family:var(--mono); font-size:12px; line-height:1.5;
+    white-space:pre-wrap; word-break:break-word; background:var(--panel);
+  }
+  .term .cmd{color:var(--cmd)}
+  .term .err{color:var(--bad)}
+  .term .done{color:var(--ok)}
+  .term .note{color:var(--accent); font-weight:600}
+  .term .idle{color:var(--dim); font-style:italic}
+  .term b.ok{color:var(--ok); font-weight:400}
+  .term b.bad{color:var(--warn); font-weight:400}
+  .term b.hex{color:var(--dim); font-weight:400}
+
+  .composer{display:flex; gap:6px; padding:8px; border-top:1px solid var(--line)}
+  .composer input{
+    flex:1; font-family:var(--mono); font-size:12.5px; padding:7px 10px;
+    background:#0d1117; color:var(--fg);
+    border:1px solid var(--line); border-radius:6px;
+  }
+  .composer input:focus{outline:none; border-color:var(--accent)}
+
+  .quick{display:flex; gap:5px; flex-wrap:wrap; padding:0 8px 8px}
+  .quick button{font-family:var(--mono); font-size:11px; padding:3px 8px}
+
+  details{margin:0 18px 24px; border:1px solid var(--line); border-radius:8px;
+          background:var(--panel)}
+  summary{padding:11px 14px; cursor:pointer; font-weight:600; font-size:13px}
+  details img{display:block; width:100%; padding:0 14px 14px}
+
+  .hint{color:var(--dim); font-size:12px; padding:0 18px 12px}
+  code{font-family:var(--mono); background:#0d1117; padding:1px 5px;
+       border-radius:4px; border:1px solid var(--line); font-size:11.5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Hardened Diagnostic Gateway <span>· console</span></h1>
+  <div class="chips">
+    <span class="chip" id="chip-vcan">vcan0 …</span>
+    <span class="chip" id="chip-build">build …</span>
+  </div>
+</header>
+
+<div class="bar">
+  <button class="primary" id="btn-scenario">▶ Lancer le scénario complet</button>
+  <button id="btn-scenario-stop" disabled>■ Interrompre</button>
+  <label class="chip" style="display:flex;align-items:center;gap:6px">
+    rythme
+    <input type="range" id="pace" min="0.3" max="2.5" step="0.1" value="1.0"
+           style="width:80px">
+    <span id="pace-val">1.0 s</span>
+  </label>
+  <span style="flex:1"></span>
+  <button id="btn-build">Compiler</button>
+  <button class="danger" id="btn-stopall">Tout arrêter</button>
+</div>
+
+<div class="grid">
+
+  <!-- ECU ------------------------------------------------------------- -->
+  <section class="pane">
+    <div class="pane-head">
+      <span class="dot" id="dot-ecu"></span>
+      <span class="pane-title">ECU virtuel</span>
+      <span class="pane-sub">écoute 0x7E0 · répond 0x7E8</span>
+      <span class="pane-actions">
+        <button class="tiny" data-start="ecu">Démarrer</button>
+        <button class="tiny" data-stop="ecu">Arrêter</button>
+        <button class="tiny" data-clear="ecu">Vider</button>
+      </span>
+    </div>
+    <pre class="term" id="term-ecu"><span class="idle">Arrêté. « Démarrer » ou « Lancer le scénario complet ».</span></pre>
+  </section>
+
+  <!-- Client ---------------------------------------------------------- -->
+  <section class="pane">
+    <div class="pane-head">
+      <span class="dot" id="dot-cli"></span>
+      <span class="pane-title">Client de diagnostic</span>
+      <span class="pane-sub" id="cli-state">—</span>
+      <span class="pane-actions">
+        <button class="tiny" data-start="diagcli">Démarrer</button>
+        <button class="tiny" data-stop="cli">Arrêter</button>
+        <button class="tiny" data-clear="cli">Vider</button>
+      </span>
+    </div>
+    <pre class="term" id="term-cli"><span class="idle">Arrêté.</span></pre>
+    <div class="quick">
+      <button data-cmd="help">help</button>
+      <button data-cmd="session extended">session extended</button>
+      <button data-cmd="read rpm">read rpm</button>
+      <button data-cmd="read vin">read vin</button>
+      <button data-cmd="dtc">dtc</button>
+      <button data-cmd="reset">reset</button>
+      <button data-cmd="seed">seed</button>
+      <button data-cmd="key">key</button>
+      <button data-cmd="clear">clear</button>
+      <button data-cmd="stats">stats</button>
+    </div>
+    <div class="composer">
+      <input id="cli-input" placeholder="tapez une commande, puis Entrée   (read vin, raw 22 F1 90 …)"
+             autocomplete="off" spellcheck="false">
+      <button id="cli-send">Envoyer</button>
+    </div>
+  </section>
+
+  <!-- Bus ------------------------------------------------------------- -->
+  <section class="pane">
+    <div class="pane-head">
+      <span class="dot" id="dot-bus"></span>
+      <span class="pane-title">Trafic CAN</span>
+      <span class="pane-sub">candump vcan0</span>
+      <span class="pane-actions">
+        <button class="tiny" data-start="candump">Écouter</button>
+        <button class="tiny" data-stop="bus">Arrêter</button>
+        <button class="tiny" data-clear="bus">Vider</button>
+      </span>
+    </div>
+    <pre class="term" id="term-bus"><span class="idle">Témoin indépendant : montre les trames réelles.</span></pre>
+  </section>
+
+  <!-- Runner ---------------------------------------------------------- -->
+  <section class="pane">
+    <div class="pane-head">
+      <span class="dot" id="dot-run"></span>
+      <span class="pane-title">Tests et campagnes</span>
+      <span class="pane-sub" id="run-state">—</span>
+      <span class="pane-actions">
+        <button class="tiny" data-stop="run">Arrêter</button>
+        <button class="tiny" data-clear="run">Vider</button>
+      </span>
+    </div>
+    <div class="quick" style="padding:8px">
+      <button data-start="tests">Tests unitaires</button>
+      <button data-start="invariants">Invariants</button>
+      <button data-start="tester">Scénario auto</button>
+      <button data-start="fuzz_bus">Injection de fautes</button>
+      <button data-start="fuzz_parser">Fuzzing analyseurs</button>
+      <button data-start="crossvalidate">Validation noyau</button>
+    </div>
+    <pre class="term" id="term-run"><span class="idle">Choisissez une campagne.</span></pre>
+  </section>
+
+</div>
+
+<p class="hint">
+  L'ECU doit tourner pour <code>Injection de fautes</code>, <code>Scénario auto</code>
+  et <code>Validation noyau</code>. Le serveur n'accepte que des commandes
+  prédéfinies et n'écoute que sur <code>127.0.0.1</code>.
+</p>
+
+<details>
+  <summary>Enregistrement de la démonstration (SVG animé)</summary>
+  <img src="/demo.svg" alt="Démonstration">
+</details>
+
+<script>
+const PANES = ['ecu','cli','bus','run'];
+const cursor = {}, atBottom = {};
+PANES.forEach(p => { cursor[p] = 0; atBottom[p] = true; });
+
+const $ = id => document.getElementById(id);
+const term = p => $('term-' + p);
+
+async function api(path, body){
+  const opt = body
+    ? {method:'POST', headers:{'Content-Type':'application/json'},
+       body:JSON.stringify(body)}
+    : {};
+  const r = await fetch(path, opt);
+  return r.json();
+}
+
+/* Colore les motifs du protocole sans rien interpreter cote serveur. */
+function decorate(text){
+  let s = text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s = s.replace(/\b(OK|ACCES DEVERROUILLE|0 echec\(s\)|ANOMALIES\s+:\s+0)\b/g,
+                '<b class="ok">$1</b>');
+  s = s.replace(/\b(REFUS|ECHEC|NRC 0x[0-9A-F]{2})\b/g, '<b class="bad">$1</b>');
+  s = s.replace(/\b(TX|RX)\b/g, '<b class="hex">$1</b>');
+  return s;
+}
+
+function append(pane, items){
+  const el = term(pane);
+  if (el.querySelector('.idle')) el.innerHTML = '';
+  const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  for (const it of items){
+    const span = document.createElement('span');
+    if (it.k !== 'out') span.className = it.k;
+    span.innerHTML = decorate(it.t) + '\n';
+    el.appendChild(span);
+  }
+  if (near) el.scrollTop = el.scrollHeight;
+}
+
+async function poll(pane){
+  try{
+    const d = await api(`/api/output?pane=${pane}&since=${cursor[pane]}`);
+    if (d.lines && d.lines.length){ append(pane, d.lines); cursor[pane] = d.next; }
+    else if (typeof d.next === 'number') cursor[pane] = d.next;
+  }catch(e){ /* serveur momentanement indisponible */ }
+}
+
+async function refresh(){
+  let s;
+  try{ s = await api('/api/status'); }catch(e){ return; }
+
+  const v = $('chip-vcan');
+  v.textContent = 'vcan0 ' + (s.vcan.present ? 'actif' : 'ABSENT');
+  v.className = 'chip ' + (s.vcan.present ? 'ok' : 'bad');
+
+  const missing = Object.entries(s.binaries).filter(([,ok]) => !ok).map(([n]) => n);
+  const b = $('chip-build');
+  b.textContent = missing.length ? ('build : ' + missing.join(', ')) : 'build à jour';
+  b.className = 'chip ' + (missing.length ? 'bad' : 'ok');
+
+  for (const p of PANES){
+    $('dot-' + p).classList.toggle('on', s.panes[p].running);
+  }
+  $('cli-state').textContent = s.panes.cli.running ? 'connecté' : 'arrêté';
+  $('run-state').textContent = s.panes.run.running
+      ? (s.panes.run.label + ' — en cours') : 'au repos';
+
+  $('btn-scenario').disabled = s.scenario;
+  $('btn-scenario-stop').disabled = !s.scenario;
+  $('btn-scenario').textContent = s.scenario
+      ? '⏳ scénario en cours…' : '▶ Lancer le scénario complet';
+}
+
+/* --- actions --- */
+
+document.addEventListener('click', async ev => {
+  const t = ev.target.closest('button');
+  if (!t) return;
+
+  if (t.dataset.start){ await api('/api/start', {preset:t.dataset.start}); refresh(); }
+  if (t.dataset.stop){  await api('/api/stop',  {pane:t.dataset.stop});   refresh(); }
+  if (t.dataset.clear){
+    const p = t.dataset.clear;
+    await api('/api/clear', {pane:p});
+    term(p).innerHTML = '';
+  }
+  if (t.dataset.cmd){ send(t.dataset.cmd); }
+});
+
+async function send(text){
+  if (!text.trim()) return;
+  const r = await api('/api/input', {pane:'cli', text});
+  if (!r.ok){
+    await api('/api/start', {preset:'diagcli'});
+    setTimeout(() => api('/api/input', {pane:'cli', text}), 800);
+  }
+}
+
+$('cli-send').onclick = () => { send($('cli-input').value); $('cli-input').value=''; };
+$('cli-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ send($('cli-input').value); $('cli-input').value=''; }
+});
+
+$('btn-scenario').onclick = async () => {
+  await api('/api/scenario', {pace: parseFloat($('pace').value)});
+  refresh();
+};
+$('btn-scenario-stop').onclick = () =>
+  api('/api/scenario/stop', {}).then(refresh);
+$('btn-build').onclick   = () => api('/api/start', {preset:'build'}).then(refresh);
+$('btn-stopall').onclick = () => api('/api/stopall', {}).then(refresh);
+
+$('pace').addEventListener('input', e => {
+  $('pace-val').textContent = parseFloat(e.target.value).toFixed(1) + ' s';
+});
+
+setInterval(() => PANES.forEach(poll), 300);
+setInterval(refresh, 1200);
+PANES.forEach(poll);
+refresh();
+</script>
+</body>
+</html>

@@ -139,12 +139,31 @@ new seed requests.
 ## Try it
 
 ```bash
-sudo modprobe vcan
-sudo ip link add dev vcan0 type vcan
-sudo ip link set up vcan0
-
+sudo tools/setup/install.sh    # une seule fois : vcan0 devient permanente
 make
 ```
+
+`install.sh` pose une unité systemd, donc l'interface CAN virtuelle est
+recréée à chaque démarrage de WSL. Rien à refaire ensuite. Pour l'annuler :
+`sudo tools/setup/install.sh --uninstall`.
+
+### Console web
+
+```bash
+make web        # http://127.0.0.1:8800
+```
+
+Quatre terminaux dans le navigateur — ECU, client de diagnostic, trafic CAN,
+campagnes de test — un champ de saisie pour piloter l'ECU à la main, et un
+bouton qui déroule tout le scénario en le commentant. Le serveur n'utilise que
+la bibliothèque standard de Python, n'écoute que sur `127.0.0.1`, et n'accepte
+que des commandes prédéfinies : le navigateur envoie un identifiant, jamais une
+ligne de commande.
+
+C'est un outil de démonstration dans `tools/`, sans lien de compilation avec
+`src/`. La pile de diagnostic reste du C sans dépendance.
+
+### En ligne de commande
 
 Terminal 1: `./build/ecu` — Terminal 2: `./build/tester` — Terminal 3:
 `candump vcan0`

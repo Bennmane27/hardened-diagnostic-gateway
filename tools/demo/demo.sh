@@ -41,13 +41,7 @@ pace()
     sleep 1.5
 }
 
-if ! ip link show vcan0 >/dev/null 2>&1; then
-    echo "vcan0 absent. Lancez :"
-    echo "  sudo modprobe vcan"
-    echo "  sudo ip link add dev vcan0 type vcan"
-    echo "  sudo ip link set up vcan0"
-    exit 1
-fi
+"$ROOT/tools/setup/ensure-vcan.sh" || exit 1
 
 cd "$ROOT"
 

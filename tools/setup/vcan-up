@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# vcan-up
+#
+# Cree et active l'interface CAN virtuelle utilisee par le projet.
+#
+# Idempotent : relancer le script sur une interface deja presente ne
+# produit ni erreur ni effet de bord. C'est ce qui permet de l'appeler
+# depuis systemd au demarrage ET a la main en cas de doute.
+
+set -e
+
+IFACE="${1:-vcan0}"
+
+# Le module peut deja etre charge, ou compile en dur dans le noyau.
+modprobe vcan 2>/dev/null || true
+
+if ! ip link show "$IFACE" >/dev/null 2>&1; then
+    ip link add dev "$IFACE" type vcan
+fi
+
+# "ip link set up" sur une interface deja active ne fait rien.
+ip link set up "$IFACE"
+
+exit 0

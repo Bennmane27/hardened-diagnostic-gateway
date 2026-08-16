@@ -60,7 +60,8 @@ These are load-bearing. Violating one silently undoes the point of the project.
 | Access control | Session rules table, `S3server` expiry, security levels |
 | Fuzzing | In-process parser fuzzer + on-bus fault injector |
 | Interop | Cross-validated against the Linux kernel ISO-TP stack |
-| Demo | Interactive client `diagcli`, scripted run, animated SVG in the README |
+| Demo | Interactive client `diagcli`, scripted run, animated SVG, web console |
+| Setup | `sudo tools/setup/install.sh` makes `vcan0` survive WSL reboots |
 | CI | Build, invariants, tests, fuzz, strict warnings, cppcheck, end-to-end on vcan0 |
 | Tests | 4 suites, ASan + UBSan, 14 733 checks |
 
@@ -197,6 +198,36 @@ The recording is reproducible rather than a one-off capture: `tools/demo/demo.sh
 is the script, `DEMO_PACE` controls its rhythm, and the simulated ECU is
 deterministic — so `make demo` after a change produces a comparable recording,
 not a different story.
+
+### D18 — The demo SVG animates with SMIL, not CSS
+
+The first version used CSS `@keyframes`. An SVG loaded through an `<img>` tag is
+an isolated document, and several viewers do not run its stylesheet — the file
+rendered as a still image. `<animate>` elements are interpreted by the SVG
+engine itself, so they work wherever the SVG renders at all.
+
+For the same reason nothing goes through a CSS class any more: colours and fonts
+are presentation attributes. The file stays correct even where `<style>` is
+ignored or stripped by a sanitiser.
+
+### D19 — The web console is a tool, never part of the stack
+
+`tools/webdemo/` is Python and lives outside `src/`. It is never compiled or
+linked with the diagnostic stack, which stays dependency-free C. The precedent
+was already set by `cast2svg.py`: tooling in Python, engine in C.
+
+Two constraints it must keep. It binds to `127.0.0.1` only, because it grants
+the right to spawn processes. And the browser never sends a command line — it
+sends a preset identifier that the server resolves against a fixed table, so a
+malicious page open in the same browser cannot make it run something arbitrary.
+
+### D20 — Derived state beats a status flag
+
+The scenario runner first tracked `_scenario_running` as a boolean. It desynced:
+the worker finished but the flag stayed true, leaving the interface stuck on
+"running" forever. It now reports `thread.is_alive()`. A flag maintained by hand
+eventually lies — one forgotten exit path is enough. State derived from the
+thing itself cannot.
 
 ### D5 — Makefile, not CMake
 

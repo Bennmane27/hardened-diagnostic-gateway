@@ -6,6 +6,8 @@
 #   make test                -> tests unitaires (ASan + UBSan)
 #   make fuzz                -> campagne de fuzzing des analyseurs
 #   make demo                -> rejoue et reenregistre la demonstration
+#   make web                 -> console web sur http://127.0.0.1:8800
+#   make setup               -> rappelle comment rendre vcan0 permanente
 #   make check-portability   -> verifie les invariants d architecture
 #   tests/interop/crossvalidate.sh -> validation croisee contre le noyau
 #   make clean               -> supprime build/
@@ -87,6 +89,23 @@ demo: all
 	tools/demo/cast2svg.py docs/media/demo.cast docs/media/demo.svg \
 	    --rows 30 --fps 1.4
 
+# Console web : plusieurs terminaux dans le navigateur, pilotage des
+# binaires et scenario automatise. Outil de demonstration, sans lien de
+# compilation avec src/.
+web: all
+	tools/webdemo/server.py
+
+# vcan0 disparait a chaque redemarrage de WSL. L'unite systemd installee
+# ici la recree automatiquement. Le make ne peut pas elever ses droits :
+# il affiche la commande a lancer.
+setup:
+	@echo "Pour rendre vcan0 permanente (une seule fois) :"
+	@echo ""
+	@echo "    sudo tools/setup/install.sh"
+	@echo ""
+	@echo "Etat actuel :"
+	@ip -brief link show vcan0 2>/dev/null || echo "    vcan0 absente"
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
@@ -143,4 +162,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz demo check-portability clean
+.PHONY: all test fuzz demo web setup check-portability clean

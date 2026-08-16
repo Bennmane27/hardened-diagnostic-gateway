@@ -22,6 +22,8 @@ Status of each milestone. The detailed rationale behind every decision lives in
 | M32 | Portability proof: protocol layers build freestanding, no external symbols |
 | M34 | Cross-validation against the Linux kernel ISO-TP stack |
 | M35 | Interactive diagnostic client and a recorded, reproducible demo |
+| M40 | Web console: four terminals, live control, automated scenario |
+| M41 | `vcan0` made permanent through a systemd unit |
 
 ## Not planned yet
 
