@@ -24,6 +24,11 @@ rewriting them.
 
 Repository: `Bennmane27/hardened-diagnostic-gateway` (public).
 
+**A research phase is now specified.** `docs/RESEARCH.md` turns the stack into a
+hardened cross-layer gateway with an adversarial state-space fuzzer, evaluated
+against baselines. `docs/NOVELTY.md` governs the novelty claim. Read both before
+touching `src/gateway/`.
+
 ---
 
 ## 2. Invariants — never break these
@@ -228,6 +233,25 @@ the worker finished but the flag stayed true, leaving the interface stuck on
 "running" forever. It now reports `thread.is_alive()`. A flag maintained by hand
 eventually lies — one forgotten exit path is enough. State derived from the
 thing itself cannot.
+
+### D21 — Novelty is claimed scoped, never as "world first"
+
+"First in the world" is undemonstrable — confidential industrial prototypes
+cannot be disproven. The defensible and scientifically stronger form is a scoped
+claim tied to a documented search: "to the best of our knowledge, the first
+open, evaluated system that ...". `docs/NOVELTY.md` is that search and a hard
+gate: nothing stronger than Tier A (descriptive, no superlative) may be said
+publicly until the prior-art review (M60) is complete and recorded. This extends
+the existing anti-overclaim discipline (§6), it does not replace it.
+
+### D22 — The invariant catalogue is code, shared by three consumers
+
+`src/gateway/invariants.h` is the single source of truth for what "a violation"
+means. The engine evaluates them, the fuzzer tries to violate them, the
+benchmark counts them. If they were three separate lists they would drift, and a
+violation found by one would be invisible to another. IDs are append-only: a
+recorded counterexample references an ID, so an ID is never reassigned. Like the
+other protocol layers it includes no system header and compiles freestanding.
 
 ### D5 — Makefile, not CMake
 

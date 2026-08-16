@@ -25,6 +25,34 @@ Status of each milestone. The detailed rationale behind every decision lives in
 | M40 | Web console: four terminals, live control, automated scenario |
 | M41 | `vcan0` made permanent through a systemd unit |
 
+## Research track — the hardened gateway
+
+See [docs/RESEARCH.md](docs/RESEARCH.md) for the full brief and
+[docs/NOVELTY.md](docs/NOVELTY.md) for the claim discipline. This is where the
+project stops being an excellent implementation and becomes a falsifiable,
+reproducible experiment.
+
+| # | Milestone | Status |
+|---|-----------|--------|
+| M50 | `invariants.h` — cross-layer invariant catalogue as code | done |
+| M51 | Gateway shadow state: passive ISO-TP + UDS tracking | next |
+| M52 | Invariant engine: evaluate, verdict ALLOW / DROP / RECOVER | |
+| M53 | In-line CAN gateway, transparent on the nominal path | |
+| M54 | RECOVER: post-violation resynchronization, availability restored | |
+| M55 | Adversarial state-space fuzzer + delta-debug minimizer | |
+| M56 | Frozen counterexample corpus + exact replay | |
+| M57 | Benchmark harness S0 (ECU) / S1 (firewall) / S2 (gateway) | |
+| M58 | STM32 + FDCAN port, measured latency | |
+| M59 | One-command reproduction + CI gate on blocked-attack count | |
+| M60 | Prior-art review — hard gate on the novelty claim | |
+| M61 | Write-up: threat model, invariants, discovery, results | |
+
+The designation the project earns on completion, and the exact wording allowed
+at each stage, are defined in [docs/RESEARCH.md](docs/RESEARCH.md) §10 and
+[docs/NOVELTY.md](docs/NOVELTY.md). The short version: no "world first" — a
+scoped "to the best of our knowledge, first open and evaluated ..." claim,
+earned by the prior-art review, which is stronger because it is falsifiable.
+
 ## Not planned yet
 
 | # | Milestone | Why it would matter |
