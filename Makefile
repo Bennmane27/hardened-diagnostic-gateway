@@ -8,6 +8,7 @@
 #   make explore             -> exploration adversariale des invariants UDS
 #   make frames              -> exploration adversariale au niveau des trames CAN
 #   make bench               -> banc de comparaison S0 / S1 / S2
+#   make hunt                -> Seed Hunter + modes coverage-guided (ahdg_hunt)
 #   make demo                -> rejoue et reenregistre la demonstration
 #   make web                 -> console web sur http://127.0.0.1:8800
 #   make gwdemo              -> demo passerelle en ligne (vcan0 <-> vcan1)
@@ -41,7 +42,7 @@ TEST_CFLAGS := -Wall -Wextra -std=c11 -g -fsanitize=address,undefined $(INCLUDES
 
 all: $(BUILD)/ecu $(BUILD)/tester $(BUILD)/diagcli $(BUILD)/gateway \
      $(BUILD)/fuzz_bus $(BUILD)/fuzz_parser $(BUILD)/ahdg_explore \
-     $(BUILD)/ahdg_frames $(BUILD)/bench
+     $(BUILD)/ahdg_frames $(BUILD)/ahdg_hunt $(BUILD)/bench
 
 $(BUILD)/ecu: src/ecu/ecu.c $(CORE) $(PLATFORM) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) src/ecu/ecu.c $(CORE) $(PLATFORM) -o $@
@@ -110,6 +111,17 @@ $(BUILD)/ahdg_frames: fuzz/ahdg_frames.c $(ISOTP_C) $(UDS) $(ECU_DATA) \
 # isotp_rx + uds. Sortie non nulle si un contre-exemple apparait.
 frames: $(BUILD)/ahdg_frames
 	./$(BUILD)/ahdg_frames 300000 0xF00D
+
+$(BUILD)/ahdg_hunt: fuzz/ahdg_hunt.c $(ISOTP_C) $(UDS) $(ECU_DATA) \
+                   $(HEADERS) src/gateway/invariants.h | $(BUILD)
+	$(CC) $(TEST_CFLAGS) fuzz/ahdg_hunt.c $(ISOTP_C) $(UDS) $(ECU_DATA) -o $@
+
+# Moteur coverage-guided : modes normal/stress/deep/extreme + Seed Hunter.
+#   make hunt                     -> chasseur de graines (classe par nouveaute)
+#   ./build/ahdg_hunt deep [seed]      coverage-guided profond
+#   ./build/ahdg_hunt extreme [seed] [s]  run until cex | plateau | delai
+hunt: $(BUILD)/ahdg_hunt
+	./$(BUILD)/ahdg_hunt hunt 16 0
 
 $(BUILD)/bench: bench/bench.c $(UDS) $(GATEWAY) src/uds/uds.h \
                src/gateway/gateway.h src/gateway/invariants.h | $(BUILD)
@@ -207,4 +219,4 @@ check-portability:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all test fuzz explore frames bench demo web gwdemo setup check-portability clean
+.PHONY: all test fuzz explore frames hunt bench demo web gwdemo setup check-portability clean

@@ -69,7 +69,7 @@ earned by the prior-art review, which is stronger because it is falsifiable.
 | # | Milestone | Why it would matter |
 |---|---|---|
 | M36 | `SecurityAccess` with HMAC-SHA256 and a hardware RNG | Replaces the demonstration key algorithm with a real one |
-| M37 | libFuzzer / AFL++ harnesses over the parsers | Coverage-guided fuzzing finds what a hand-rolled generator misses |
+| M37 | libFuzzer / AFL++ harnesses over the parsers | A hand-rolled coverage-guided engine exists (`fuzz/ahdg_hunt.c`, modes + Seed Hunter); libFuzzer/AFL++ remain |
 | M38 | CAN FD | 64-byte frames change the ISO-TP framing rules |
 | M39 | STM32 + FreeRTOS port of `src/platform/` | The portability work already done, actually exercised |
 

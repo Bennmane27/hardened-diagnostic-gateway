@@ -334,6 +334,22 @@ the trusted-bus candump, while the legitimate unlock-then-reset passes intact.
 gateway_main.c is the Linux app (like ecu.c); gateway.c stays portable. ECU,
 tester and diagcli now read HDG_IFACE so they can be placed on either bus.
 
+### D29 — The adversary is coverage-guided and ranks seeds by novelty, not CPU
+
+`fuzz/ahdg_hunt.c` adds campaign modes (normal/stress/deep/extreme) and a Seed
+Hunter that scores a seed by rare-state coverage, never by runtime - a seed that
+spins 20 s in the same states is worthless; one that reaches a new state in
+400 ms is not. The coverage-guided engine keeps a corpus of inputs that increased
+coverage and havoc-mutates them (the alphabet already spans timing, ISO-TP, UDS
+and state mutations), reaching depth 37 vs random's depth 8 for the same seed.
+
+Honest finding it surfaced: with a coarse fingerprint every seed saturated ~12
+states with 0 rare states - the space was too small to make guided fuzzing
+meaningful. Enriching the fingerprint (DTC count, reassembly length, reset) roughly
+doubled it and made rare states appear, but a single ECU's reachable space stays
+bounded; a genuinely vast space is the multi-ECU future (M107-108). Recorded in
+docs/findings/SEED-HUNTER.md. Do not claim a large state space the ECU does not have.
+
 ### D5 — Makefile, not CMake
 
 Introduced when the build outgrew a single `gcc` line. CMake buys cross-platform

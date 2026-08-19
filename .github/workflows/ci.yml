@@ -47,6 +47,13 @@ jobs:
       - name: Benchmark S0 / S1 / S2
         run: ./build/bench 200000 0xB0A7
 
+      # Le moteur coverage-guided : sonde du Seed Hunter (rapide) + une
+      # campagne NORMAL. Sortie non nulle si un contre-exemple apparait.
+      - name: Coverage-guided hunter
+        run: |
+          ./build/ahdg_hunt hunt 16 0
+          ./build/ahdg_hunt normal 0x5EED1 300000
+
   strict-warnings:
     name: Strict warnings
     runs-on: ubuntu-latest
