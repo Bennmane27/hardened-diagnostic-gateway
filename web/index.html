@@ -150,7 +150,7 @@
 
     <div class="kpis">
       <div class="kpi">
-        <div class="v">14 737</div>
+        <div class="v">14,737</div>
         <div class="l">unit checks, under AddressSanitizer + UBSan</div>
         <div class="foot"><span class="ok-dot"></span> 0 failures</div>
       </div>
@@ -160,7 +160,7 @@
         <div class="foot"><span class="ok-dot"></span> 0 anomalies</div>
       </div>
       <div class="kpi">
-        <div class="v">83 895 <span style="color:var(--muted);font-size:19px">→</span> 0</div>
+        <div class="v">83,895 <span style="color:var(--muted);font-size:19px">→</span> 0</div>
         <div class="l">unauthorized ECU resets: stateless firewall vs this gateway</div>
         <div class="foot"><span class="ok-dot"></span> all blocked, no legitimate flow broken</div>
       </div>
@@ -264,8 +264,8 @@
     <h2>Cross-layer invariant catalogue <span class="tag">src/gateway/invariants.h</span></h2>
     <div class="body">
       <div class="inv" id="inv-list"></div>
-      <div class="note">Each invariant is a property the stack must never violate. The adversarial
-        explorer's only job is to find a sequence that breaks one — and to shrink it to an
+      <div class="note">Each line names a state the stack must never reach. The adversarial
+        explorer's only job is to find a sequence that reaches one — and to shrink it to an
         irreducible counterexample when it does.</div>
     </div>
   </section>
@@ -365,7 +365,7 @@ function renderBars(j){
           (blocked?'var(--good)':'var(--critical)')+'"></div>'+
         '<div class="bar-val"><span class="icon '+(blocked?'pass':'fail')+'">'+
           (blocked?'✓':'✕')+'</span>'+v.toLocaleString('en-US')+
-          (blocked?' blocked':' got through')+'</div>'+
+          ' got through'+(blocked?' — all blocked':'')+'</div>'+
       '</div>';
     host.appendChild(row);
   });
@@ -475,7 +475,14 @@ createAHDG().then(mod=>{
 
   /* Pre-fill so the page never looks empty on a screenshot. */
   line(el('uds-out'),api.version(),'dim');
-  line(el('uds-out'),'Ready. Press "Run the full demo", or send a request.','dim');
+  line(el('uds-out'),'');
+  /* Not a mock-up: these three requests really execute on load, which is why
+     the first one is denied — the ECU boots locked, in the default session. */
+  sendUds('11 01');
+  sendUds('10 03');
+  sendUds('22 F1 90');
+  line(el('uds-out'),'');
+  line(el('uds-out'),'Press "Run the full demo", or send your own request.','dim');
   line(el('ex-out'),'The explorer composes sequences of diagnostic actions and drives the','dim');
   line(el('ex-out'),'real UDS server, hunting for a reachable forbidden state. Deterministic;','dim');
   line(el('ex-out'),'any finding is minimized to an irreducible counterexample.','dim');

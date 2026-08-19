@@ -102,49 +102,49 @@ typedef struct
     hdg_group_t        group;
     hdg_severity_t     default_severity;
     const char        *code;     /* etiquette courte, stable, pour les traces */
-    const char        *summary;  /* une phrase                                */
+    const char        *summary;  /* one sentence: what a violation looks like */
 } hdg_invariant_info_t;
 
 static inline const hdg_invariant_info_t *hdg_invariant_table(size_t *count)
 {
     static const hdg_invariant_info_t TABLE[] = {
         { HDG_INV_SEC_NO_UNAUTH_EFFECT, HDG_GROUP_SEC, HDG_SEV_DROP,
-          "SEC-1", "service protege sans deverrouillage prealable" },
+          "SEC-1", "a protected service took effect without a prior unlock" },
         { HDG_INV_SEC_SEED_KEY_BINDING, HDG_GROUP_SEC, HDG_SEV_DROP,
-          "SEC-2", "cle acceptee sans graine liee et non consommee" },
+          "SEC-2", "a key was accepted without a bound, unconsumed seed" },
         { HDG_INV_SEC_RELOCK_ON_RESET, HDG_GROUP_SEC, HDG_SEV_RECOVER,
-          "SEC-3", "securite non reverrouillee apres ECUReset" },
+          "SEC-3", "security stayed unlocked across an ECUReset" },
         { HDG_INV_SEC_RELOCK_ON_DEFAULT, HDG_GROUP_SEC, HDG_SEV_RECOVER,
-          "SEC-4", "securite tenue apres retour en session par defaut" },
+          "SEC-4", "security stayed unlocked after returning to the default session" },
         { HDG_INV_SEC_MONOTONIC_ATTEMPTS, HDG_GROUP_SEC, HDG_SEV_DROP,
-          "SEC-5", "compteur d'essais remis a zero par un evenement transport" },
+          "SEC-5", "the failed-attempt counter was cleared by a transport event" },
 
         { HDG_INV_XL_TRANSPORT_CANNOT_FORGE_AUTHORITY, HDG_GROUP_XL,
           HDG_SEV_RECOVER,
-          "XL-1", "une anomalie ISO-TP forge une autorite UDS" },
+          "XL-1", "an ISO-TP anomaly forged UDS authority" },
         { HDG_INV_XL_NO_AUTHORITY_CARRYOVER, HDG_GROUP_XL, HDG_SEV_RECOVER,
-          "XL-2", "autorite survivant a un abort de transport" },
+          "XL-2", "authority survived a transport abort" },
         { HDG_INV_XL_EPOCH_CONSISTENCY, HDG_GROUP_XL, HDG_SEV_RECOVER,
-          "XL-3", "passerelle et ECU en desaccord d'epoque ou d'etat" },
+          "XL-3", "gateway and ECU disagreed on epoch or state" },
         { HDG_INV_XL_SINGLE_WRITER, HDG_GROUP_XL, HDG_SEV_DROP,
-          "XL-4", "deux transferts entrelaces delivres a UDS" },
+          "XL-4", "two interleaved transfers were delivered to UDS" },
 
         { HDG_INV_TP_LENGTH_HONESTY, HDG_GROUP_TP, HDG_SEV_DROP,
-          "TP-1", "longueur delivree differente de la longueur annoncee" },
+          "TP-1", "delivered length differed from the announced length" },
         { HDG_INV_TP_SEQUENCE_MONOTONIC, HDG_GROUP_TP, HDG_SEV_DROP,
-          "TP-2", "numero de sequence non successeur modulo 16" },
+          "TP-2", "a sequence number was not the successor modulo 16" },
         { HDG_INV_TP_BOUNDED_BUFFER, HDG_GROUP_TP, HDG_SEV_DROP,
-          "TP-3", "depassement du tampon de reassemblage" },
+          "TP-3", "the reassembly buffer overflowed" },
 
         { HDG_INV_TIME_DEADLINE_CONSISTENCY, HDG_GROUP_TIME, HDG_SEV_RECOVER,
-          "TIME-1", "N_Cr / N_Bs / S3 divergents entre passerelle et ECU" },
+          "TIME-1", "N_Cr / N_Bs / S3 diverged between gateway and ECU" },
         { HDG_INV_TIME_NO_STALE_RESUME, HDG_GROUP_TIME, HDG_SEV_DROP,
-          "TIME-2", "trame tardive relancant un transfert expire" },
+          "TIME-2", "a late frame resumed an expired transfer" },
 
         { HDG_INV_AVAIL_RECOVERABLE, HDG_GROUP_AVAIL, HDG_SEV_RECOVER,
-          "AVAIL-1", "session valide impossible apres une attaque bloquee" },
+          "AVAIL-1", "a valid session became impossible after a blocked attack" },
         { HDG_INV_AVAIL_NO_WEDGED_CONTEXT, HDG_GROUP_AVAIL, HDG_SEV_RECOVER,
-          "AVAIL-2", "ECU laisse incapable de servir le diagnostic" }
+          "AVAIL-2", "the ECU was left unable to serve diagnostics" }
     };
 
     if (count != NULL)
