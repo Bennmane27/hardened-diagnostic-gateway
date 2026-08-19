@@ -78,11 +78,11 @@
   .card h2 .tag{margin-left:auto;font-family:var(--mono);font-size:10.5px;
     color:var(--muted);font-weight:400;background:var(--panel-2);
     border:1px solid var(--line-soft);padding:3px 8px;border-radius:5px}
-  .body{padding:14px 16px;display:flex;flex-direction:column;gap:11px}
+  .body{padding:14px 16px;display:flex;flex-direction:column;gap:11px;flex:1}
 
   .term{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;
     word-break:break-word;background:var(--panel-2);border:1px solid var(--line-soft);
-    border-radius:8px;padding:12px 13px;min-height:186px;max-height:330px;overflow:auto}
+    border-radius:8px;padding:12px 13px;min-height:186px;overflow:auto;flex:1 1 auto}
   .term .ok{color:var(--good)} .term .bad{color:var(--critical)}
   .term .dim{color:var(--muted)} .term .note{color:var(--accent);font-weight:600}
   .term .cmd{color:#b392f0}
@@ -219,6 +219,9 @@
         <label class="lbl">seed <input id="ex-seed" value="0xA11CE" style="width:96px;flex:none"></label>
         <button class="primary" id="ex-run">Run</button>
       </div>
+      <div class="note">Composes sequences of diagnostic actions, drives the real UDS
+        server, and hunts for a reachable forbidden state. Deterministic — any finding is
+        minimized to an irreducible counterexample.</div>
       <pre class="term" id="ex-out"></pre>
     </div>
   </section>
@@ -255,6 +258,9 @@
         <input id="tp-in" value="07 10 03" autocomplete="off" spellcheck="false">
         <button class="primary" id="tp-decode">Decode</button>
       </div>
+      <div class="note">A frame can lie about its own length: <code>07 10 03</code> announces
+        7 payload bytes but carries 2. A parser that trusts the announcement reads memory it
+        never received.</div>
       <pre class="term" id="tp-out"></pre>
     </div>
   </section>
@@ -396,8 +402,10 @@ function runBenchmark(){
 }
 
 /* ---------- ISO-TP ---------- */
-function decodeTp(hex){
-  const out=el('tp-out'); clear(out);
+function decodeTp(hex){ clear(el('tp-out')); decodeTpAppend(hex); }
+
+function decodeTpAppend(hex){
+  const out=el('tp-out');
   el('tp-in').value=hex;
   line(out,'> '+hex,'cmd');
   const j=JSON.parse(api.isotp_decode(hex));
@@ -483,12 +491,9 @@ createAHDG().then(mod=>{
   sendUds('22 F1 90');
   line(el('uds-out'),'');
   line(el('uds-out'),'Press "Run the full demo", or send your own request.','dim');
-  line(el('ex-out'),'The explorer composes sequences of diagnostic actions and drives the','dim');
-  line(el('ex-out'),'real UDS server, hunting for a reachable forbidden state. Deterministic;','dim');
-  line(el('ex-out'),'any finding is minimized to an irreducible counterexample.','dim');
-  line(el('tp-out'),'Try a frame that lies about its own length — 07 10 03 announces 7','dim');
-  line(el('tp-out'),'payload bytes but carries 2. A parser that trusts it reads memory','dim');
-  line(el('tp-out'),'it never received.','dim');
+  el('ex-budget').value='50000';
+  runExplore().then(()=>{ el('ex-budget').value='200000'; });
+  decodeTp('07 10 03');
   renderBars({s0:83895,s1:83895,s2:0});
   line(el('bn-out'),'Reference run, 200 000 scenarios. Press Run to reproduce it here.','dim');
 }).catch(err=>{
