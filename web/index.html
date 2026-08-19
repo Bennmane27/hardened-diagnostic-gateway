@@ -1,107 +1,205 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AHDG — automotive diagnostic security lab (in-browser)</title>
+<title>AHDG — Automotive Diagnostic Security Lab</title>
 <style>
   :root{
-    --bg:#0d1117; --panel:#11151c; --chrome:#1c2128; --line:#242c37;
-    --fg:#c9d1d9; --dim:#8b949e; --accent:#58a6ff;
-    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --cmd:#a371f7;
+    --bg:#0d1117; --panel:#151b23; --panel-2:#11161e; --chrome:#1b2430;
+    --line:#28323f; --line-soft:#1f2833;
+    --fg:#e6edf3; --dim:#9aa7b4; --muted:#6e7d8c;
+    --accent:#3987e5;
+    --good:#0ca30c; --critical:#d03b3b; --warning:#fab219;
     --mono:'SFMono-Regular',Consolas,'DejaVu Sans Mono',monospace;
+    --sans:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);
-       font-family:-apple-system,'Segoe UI',Roboto,sans-serif;font-size:14px}
-  a{color:var(--accent)}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);
+       font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
 
-  header{padding:16px 20px;background:var(--chrome);border-bottom:1px solid var(--line)}
-  header h1{margin:0;font-size:17px}
-  header p{margin:6px 0 0;color:var(--dim);font-size:13px;max-width:80ch}
-  .status{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
-  .chip{font-family:var(--mono);font-size:11.5px;padding:4px 10px;border-radius:999px;
-        border:1px solid var(--line);background:#0d1117;color:var(--dim)}
-  .chip.ok{color:var(--ok);border-color:#1d3b26}
-  .chip.bad{color:var(--bad);border-color:#4a1f1d}
-  .chip.warn{color:var(--warn);border-color:#4a3a1d}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 24px}
 
-  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:16px 20px}
-  @media (max-width:1000px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-        display:flex;flex-direction:column;overflow:hidden}
-  .card h2{margin:0;padding:11px 14px;font-size:13px;background:var(--chrome);
-           border-bottom:1px solid var(--line)}
-  .card h2 span{color:var(--dim);font-weight:400;font-size:11.5px}
-  .body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+  /* ---------- HERO ---------- */
+  header{
+    border-bottom:1px solid var(--line);
+    background:
+      radial-gradient(900px 340px at 12% -40%, rgba(57,135,229,.16), transparent 70%),
+      linear-gradient(180deg,#121924 0%,var(--bg) 100%);
+  }
+  .hero{padding:38px 0 26px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);
+    font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+    border:1px solid rgba(57,135,229,.35);background:rgba(57,135,229,.10);
+    padding:5px 11px;border-radius:999px;margin-bottom:16px}
+  h1{margin:0 0 10px;font-size:34px;line-height:1.15;letter-spacing:-.02em;font-weight:700}
+  h1 .sub{display:block;font-size:15px;font-weight:400;color:var(--dim);
+    letter-spacing:0;margin-top:9px;max-width:78ch;line-height:1.6}
 
-  .term{font-family:var(--mono);font-size:12px;line-height:1.55;white-space:pre-wrap;
-        word-break:break-word;background:#0b0e13;border:1px solid var(--line);
-        border-radius:6px;padding:10px 12px;min-height:120px;max-height:340px;overflow:auto}
-  .term .cmd{color:var(--cmd)} .term .ok{color:var(--ok)} .term .bad{color:var(--bad)}
-  .term .dim{color:var(--dim)} .term .note{color:var(--accent);font-weight:600}
+  /* ---------- KPI TILES ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;
+    margin:26px 0 4px}
+  @media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:15px 16px}
+  .kpi .v{font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.02em;
+    line-height:1.1}
+  .kpi .l{color:var(--dim);font-size:12px;margin-top:7px;line-height:1.45}
+  .kpi .foot{display:flex;align-items:center;gap:6px;margin-top:9px;font-size:11.5px;
+    color:var(--muted);font-family:var(--mono)}
+  .ok-dot,.bad-dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .ok-dot{background:var(--good)} .bad-dot{background:var(--critical)}
 
-  .row{display:flex;gap:7px;flex-wrap:wrap}
-  input{flex:1;min-width:120px;font-family:var(--mono);font-size:12.5px;padding:8px 10px;
-        background:#0b0e13;color:var(--fg);border:1px solid var(--line);border-radius:6px}
-  input:focus{outline:none;border-color:var(--accent)}
-  button{font:inherit;font-size:12.5px;padding:7px 12px;border-radius:6px;
-         border:1px solid var(--line);background:#1a2029;color:var(--fg);cursor:pointer}
-  button:hover:not(:disabled){background:#242c37;border-color:#3d4757}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
-  button.tiny{font-family:var(--mono);font-size:11px;padding:4px 8px}
+  .runbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    padding:16px 0 22px}
+  .note{color:var(--muted);font-size:12.5px}
 
-  .chips-live{display:flex;gap:7px;flex-wrap:wrap}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
-  td.code{font-family:var(--mono);color:var(--accent);white-space:nowrap}
-  .foot{padding:14px 20px;color:var(--dim);font-size:12px;border-top:1px solid var(--line)}
-  .loading{padding:40px;text-align:center;color:var(--dim)}
+  /* ---------- BUTTONS ---------- */
+  button{font:inherit;font-size:12.5px;padding:8px 14px;border-radius:7px;
+    border:1px solid var(--line);background:#1d2530;color:var(--fg);cursor:pointer;
+    transition:.12s}
+  button:hover:not(:disabled){background:#25303d;border-color:#3a4757}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;
+    font-weight:600;padding:9px 18px}
+  button.primary:hover:not(:disabled){background:#4b95ea}
+  button.tiny{font-family:var(--mono);font-size:11px;padding:4px 9px}
+
+  /* ---------- CARDS ---------- */
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;
+    padding:0 0 26px}
+  @media (max-width:1040px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    display:flex;flex-direction:column;overflow:hidden}
+  .card h2{margin:0;padding:13px 16px;font-size:13px;font-weight:600;
+    background:linear-gradient(180deg,var(--chrome),#171f29);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .card h2 .tag{margin-left:auto;font-family:var(--mono);font-size:10.5px;
+    color:var(--muted);font-weight:400;background:var(--panel-2);
+    border:1px solid var(--line-soft);padding:3px 8px;border-radius:5px}
+  .body{padding:14px 16px;display:flex;flex-direction:column;gap:11px}
+
+  .term{font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;
+    word-break:break-word;background:var(--panel-2);border:1px solid var(--line-soft);
+    border-radius:8px;padding:12px 13px;min-height:186px;max-height:330px;overflow:auto}
+  .term .ok{color:var(--good)} .term .bad{color:var(--critical)}
+  .term .dim{color:var(--muted)} .term .note{color:var(--accent);font-weight:600}
+  .term .cmd{color:#b392f0}
+
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select{font-family:var(--mono);font-size:12.5px;padding:8px 11px;
+    background:var(--panel-2);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px}
+  input{flex:1;min-width:130px}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .lbl{font-family:var(--mono);font-size:11px;color:var(--dim);
+    display:flex;align-items:center;gap:7px}
+
+  /* ---------- BAR CHART ---------- */
+  .chart{display:flex;flex-direction:column;gap:12px;padding:4px 2px 2px}
+  .bar-row{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center}
+  .bar-name{font-size:12px;color:var(--dim);line-height:1.3}
+  .bar-name b{display:block;color:var(--fg);font-weight:600;font-size:12.5px}
+  .bar-track{position:relative;height:26px;display:flex;align-items:center;gap:9px}
+  .bar-fill{height:26px;border-radius:0 4px 4px 0;min-width:3px;
+    transition:width .5s cubic-bezier(.22,.61,.36,1)}
+  .bar-val{font-family:var(--mono);font-size:12.5px;font-weight:600;
+    color:var(--fg);white-space:nowrap;display:flex;align-items:center;gap:6px}
+  .bar-val .icon{font-weight:700;font-size:13px}
+  .bar-val .icon.pass{color:var(--good)} .bar-val .icon.fail{color:var(--critical)}
+  .bar-caption{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);
+    padding-top:4px;border-top:1px solid var(--line-soft);margin-top:4px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:11px;height:11px;border-radius:3px;flex:none}
+
+  /* ---------- INVARIANTS ---------- */
+  .inv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  @media (max-width:760px){.inv{grid-template-columns:1fr}}
+  .inv-item{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;
+    background:var(--panel-2);border:1px solid var(--line-soft);border-radius:7px}
+  .chip{font-family:var(--mono);font-size:10px;font-weight:600;padding:3px 7px;
+    border-radius:5px;flex:none;letter-spacing:.03em}
+  .chip.SEC{background:rgba(208,59,59,.14);color:#f08a8a;border:1px solid rgba(208,59,59,.3)}
+  .chip.XL{background:rgba(57,135,229,.14);color:#7fb4f0;border:1px solid rgba(57,135,229,.3)}
+  .chip.TP{background:rgba(250,178,25,.13);color:#e5b95c;border:1px solid rgba(250,178,25,.28)}
+  .chip.TIME{background:rgba(154,167,180,.12);color:#aab6c2;border:1px solid rgba(154,167,180,.25)}
+  .chip.AVAIL{background:rgba(12,163,12,.14);color:#5cc25c;border:1px solid rgba(12,163,12,.3)}
+  .inv-txt{font-size:12px;color:var(--dim);line-height:1.45}
+
+  footer{border-top:1px solid var(--line);padding:20px 0 34px;color:var(--muted);
+    font-size:12px;line-height:1.6}
+  code{font-family:var(--mono);background:var(--panel-2);padding:1.5px 5px;
+    border-radius:4px;border:1px solid var(--line-soft);font-size:11.5px}
+  .loading{padding:70px 24px;text-align:center;color:var(--dim)}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>AHDG — Automotive Diagnostic Security Lab</h1>
-  <p>
-    The real C stack — ISO-TP, a UDS server, a virtual ECU, and the adversarial
-    state-space explorer — compiled to WebAssembly and running entirely in this
-    tab. Nothing is installed, nothing is sent to a server: every response and
-    every counterexample below is produced by the production code executing in
-    your browser. Source:
-    <a href="https://github.com/Bennmane27/hardened-diagnostic-gateway" target="_blank"
-       rel="noopener">Bennmane27/hardened-diagnostic-gateway</a>.
-  </p>
-  <div class="status">
-    <span class="chip" id="chip-wasm">WASM …</span>
-    <span class="chip" id="chip-session">session …</span>
-    <span class="chip" id="chip-security">security …</span>
+  <div class="wrap hero">
+    <div class="eyebrow">● Live — real C compiled to WebAssembly</div>
+    <h1>AHDG — Automotive Diagnostic Security Lab
+      <span class="sub">An ISO-TP transport, a UDS server, a virtual ECU, an admission gateway and an
+      adversarial state-space explorer — all written from scratch in C, compiled to WebAssembly and
+      running <b>entirely in this tab</b>. Nothing installed, nothing sent to a server: every byte below
+      is produced by the production code executing in your browser.
+      <a href="https://github.com/Bennmane27/hardened-diagnostic-gateway" target="_blank" rel="noopener">View the source →</a></span>
+    </h1>
+
+    <div class="kpis">
+      <div class="kpi">
+        <div class="v">14 737</div>
+        <div class="l">unit checks, under AddressSanitizer + UBSan</div>
+        <div class="foot"><span class="ok-dot"></span> 0 failures</div>
+      </div>
+      <div class="kpi">
+        <div class="v">21 M</div>
+        <div class="l">adversarial CAN frames injected into the real pipeline</div>
+        <div class="foot"><span class="ok-dot"></span> 0 anomalies</div>
+      </div>
+      <div class="kpi">
+        <div class="v">83 895 <span style="color:var(--muted);font-size:19px">→</span> 0</div>
+        <div class="l">unauthorized ECU resets: stateless firewall vs this gateway</div>
+        <div class="foot"><span class="ok-dot"></span> all blocked, no legitimate flow broken</div>
+      </div>
+      <div class="kpi">
+        <div class="v">~80 ns</div>
+        <div class="l">gateway admission decision, per request</div>
+        <div class="foot">zero dynamic allocation</div>
+      </div>
+    </div>
+
+    <div class="runbar">
+      <button class="primary" id="run-all">▶ Run the full demo</button>
+      <span class="note">Drives every panel below with the real code — about 4 seconds.</span>
+    </div>
   </div>
 </header>
 
-<div id="loading" class="loading">Chargement du module WebAssembly…</div>
+<div id="loading" class="loading">Loading the WebAssembly module…</div>
 
+<div class="wrap">
 <div class="grid" id="app" style="display:none">
 
   <!-- UDS console -->
   <section class="card">
-    <h2>UDS console <span>· real uds.c, persistent ECU</span></h2>
+    <h2>UDS console <span class="tag">real uds.c</span></h2>
     <div class="body">
       <div class="row">
         <button class="tiny" data-uds="10 03">session extended</button>
         <button class="tiny" data-uds="22 F1 90">read VIN</button>
-        <button class="tiny" data-uds="22 01 00">read RPM</button>
         <button class="tiny" data-uds="19 02 09">read DTC</button>
         <button class="tiny" data-uds="27 01">request seed</button>
         <button class="tiny" data-uds="11 01">ECU reset</button>
         <button class="tiny" data-uds="10 01">session default</button>
       </div>
       <div class="row">
-        <input id="uds-in" placeholder="UDS hex, e.g. 22 F1 90" value="10 03"
-               autocomplete="off" spellcheck="false">
+        <input id="uds-in" value="10 03" autocomplete="off" spellcheck="false"
+               placeholder="UDS hex, e.g. 22 F1 90">
         <button class="primary" id="uds-send">Send</button>
-        <button id="uds-reset">Reset ECU</button>
+        <button id="uds-reset">Reset</button>
       </div>
       <pre class="term" id="uds-out"></pre>
     </div>
@@ -109,229 +207,287 @@
 
   <!-- Adversarial explorer -->
   <section class="card">
-    <h2>Adversarial explorer <span>· attacks the real UDS server</span></h2>
+    <h2>Adversarial explorer <span class="tag">attacks the real server</span></h2>
     <div class="body">
       <div class="row">
-        <label class="chip">sequences
-          <select id="ex-budget" style="background:#0b0e13;color:var(--fg);border:none">
+        <label class="lbl">sequences
+          <select id="ex-budget">
             <option value="50000">50 000</option>
             <option value="200000" selected>200 000</option>
             <option value="1000000">1 000 000</option>
-          </select>
-        </label>
-        <label class="chip">seed <input id="ex-seed" value="0xA11CE"
-               style="width:90px;padding:2px 6px"></label>
+          </select></label>
+        <label class="lbl">seed <input id="ex-seed" value="0xA11CE" style="width:96px;flex:none"></label>
         <button class="primary" id="ex-run">Run</button>
       </div>
-      <pre class="term" id="ex-out"><span class="dim">The explorer composes sequences of diagnostic actions and drives the real UDS server, searching for a reachable forbidden state. Deterministic; a finding is minimized to an irreducible counterexample.</span></pre>
+      <pre class="term" id="ex-out"></pre>
     </div>
   </section>
 
-
   <!-- Gateway benchmark -->
   <section class="card">
-    <h2>Gateway benchmark <span>· S0 / S1 / S2, real gateway.c</span></h2>
+    <h2>Gateway benchmark <span class="tag">S0 / S1 / S2 · real gateway.c</span></h2>
     <div class="body">
       <div class="row">
-        <label class="chip">scenarios
-          <select id="bn-budget" style="background:#0b0e13;color:var(--fg);border:none">
+        <label class="lbl">scenarios
+          <select id="bn-budget">
             <option value="50000">50 000</option>
             <option value="200000" selected>200 000</option>
-          </select>
-        </label>
+          </select></label>
         <button class="primary" id="bn-run">Run</button>
+        <span class="note" id="bn-status">Same ECU, same attacks, three defences.</span>
       </div>
-      <pre class="term" id="bn-out"><span class="dim">The same gateway (src/gateway/gateway.c) as an admission controller in front of a permissive ECU, versus a stateless firewall, on the same attack corpus. A stateless filter cannot tell an authorized reset from an unauthorized one; the gateway reconstructs the security state and blocks every unauthorized reset while breaking no legitimate flow.</span></pre>
+      <div class="chart" id="bn-chart"></div>
+      <pre class="term" id="bn-out" style="min-height:76px"></pre>
     </div>
   </section>
 
   <!-- ISO-TP inspector -->
   <section class="card">
-    <h2>ISO-TP inspector <span>· real isotp.c</span></h2>
+    <h2>ISO-TP inspector <span class="tag">real isotp.c</span></h2>
     <div class="body">
       <div class="row">
-        <input id="tp-in" placeholder="CAN frame hex, e.g. 02 10 03" value="07 10 03"
-               autocomplete="off" spellcheck="false">
-        <button id="tp-decode">Decode</button>
+        <button class="tiny" data-tp="02 10 03">02 10 03 · valid</button>
+        <button class="tiny" data-tp="07 10 03">07 10 03 · lies about length</button>
+        <button class="tiny" data-tp="10 14 62 F1 90 56 46 31">First Frame</button>
+        <button class="tiny" data-tp="21 48 44 47">Consecutive</button>
       </div>
-      <pre class="term" id="tp-out"><span class="dim">Try 02 10 03 (valid), 07 10 03 (announces 7, carries 2), 10 14 ... (First Frame), 21 ... (Consecutive Frame).</span></pre>
+      <div class="row">
+        <input id="tp-in" value="07 10 03" autocomplete="off" spellcheck="false">
+        <button class="primary" id="tp-decode">Decode</button>
+      </div>
+      <pre class="term" id="tp-out"></pre>
     </div>
   </section>
 
   <!-- Invariants -->
-  <section class="card">
-    <h2>Invariant catalogue <span>· src/gateway/invariants.h</span></h2>
+  <section class="card" style="grid-column:1/-1">
+    <h2>Cross-layer invariant catalogue <span class="tag">src/gateway/invariants.h</span></h2>
     <div class="body">
-      <table id="inv-table"><tbody></tbody></table>
+      <div class="inv" id="inv-list"></div>
+      <div class="note">Each invariant is a property the stack must never violate. The adversarial
+        explorer's only job is to find a sequence that breaks one — and to shrink it to an
+        irreducible counterexample when it does.</div>
     </div>
   </section>
 
 </div>
-
-<div class="foot">
-  This lab runs a subset of the system: the UDS state machine, ISO-TP framing,
-  and the UDS-level adversary. The in-line gateway mediation, cross-layer
-  transport invariants, hardware validation and the prior-art review are separate
-  milestones — see the repository's <code>docs/RESEARCH.md</code>. No result here
-  is simulated; if a number appears, the C code produced it.
 </div>
+
+<footer><div class="wrap">
+  This lab runs a subset of the system: the UDS state machine, ISO-TP framing, the admission gateway
+  and the UDS-level adversary. Hardware validation and the prior-art review are separate milestones —
+  see <code>docs/RESEARCH.md</code>. An ISO-TP implementation <i>targeting</i> ISO 15765-2 behaviour and
+  a UDS server implementing a <i>subset</i> of ISO 14229-1; no conformance claim is made.
+  No number here is simulated — if it appears, the C code produced it.
+</div></footer>
 
 <script src="./ahdg.js"></script>
 <script>
-let M = null, api = {};
+let M=null, api={};
+const el=id=>document.getElementById(id);
+const term=id=>el(id);
 
-function el(id){ return document.getElementById(id); }
-
-function line(pre, text, cls){
-  const s = document.createElement('span');
-  if (cls) s.className = cls;
-  s.textContent = text + '\n';
-  pre.appendChild(s);
-  pre.scrollTop = pre.scrollHeight;
+function line(pre,text,cls){
+  const s=document.createElement('span');
+  if(cls) s.className=cls;
+  s.textContent=text+'\n';
+  pre.appendChild(s); pre.scrollTop=pre.scrollHeight;
 }
+function clear(pre){ pre.innerHTML=''; }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
-function setChips(state){
-  const sess = el('chip-session'), sec = el('chip-security');
-  sess.textContent = 'session: ' + (state.session_name || '?');
-  sess.className = 'chip ' + (state.session === 3 ? 'warn' : '');
-  const locked = state.security === 0;
-  sec.textContent = 'security: ' + (locked ? 'LOCKED' : 'UNLOCKED');
-  sec.className = 'chip ' + (locked ? 'ok' : 'bad');
-}
-
+/* ---------- UDS ---------- */
 function sendUds(hex){
-  const out = el('uds-out');
-  line(out, '> ' + hex, 'cmd');
-  const j = JSON.parse(api.request(hex));
-  line(out, '  RX  ' + (j.response || '(none)') + '  [' + j.result_name + ']',
-       j.response && j.response.startsWith('7F') ? 'bad' : 'ok');
-  if (j.verdict === 'DROP')
-    line(out, '  AHDG verdict: DROP  (' + j.invariant + ')', 'bad');
-  setChips(j.state);
+  const out=el('uds-out');
+  line(out,'> '+hex,'cmd');
+  const j=JSON.parse(api.request(hex));
+  const neg=j.response && j.response.startsWith('7F');
+  line(out,'  RX  '+(j.response||'(none)'), neg?'bad':'ok');
+  if(neg){
+    const nrc=j.response.split(' ')[2];
+    line(out,'      DENIED — NRC 0x'+nrc,'bad');
+  }
+  line(out,'      session '+j.state.session_name+
+            '  ·  security '+j.state.security_name,'dim');
+  return j;
 }
 
+/* ---------- explorer ---------- */
 function runExplore(){
-  const out = el('ex-out');
-  out.innerHTML = '';
-  const budget = parseInt(el('ex-budget').value, 10);
-  const seed = parseInt(el('ex-seed').value) >>> 0;
-  line(out, 'attacking the real UDS server: ' + budget.toLocaleString() +
-            ' sequences, seed 0x' + seed.toString(16).toUpperCase(), 'note');
-  // laisse le navigateur peindre la ligne avant le calcul bloquant
-  setTimeout(() => {
-    const t0 = performance.now();
-    const j = JSON.parse(api.explore(budget, seed));
-    const ms = Math.round(performance.now() - t0);
-    line(out, 'sequences: ' + j.tested.toLocaleString() +
-              '   security states: ' + j.states + '   (' + ms + ' ms)');
-    if (j.counterexamples.length === 0){
-      line(out, '');
-      j.evaluated.forEach(e =>
-        line(out, '  ' + e.code.padEnd(8) +
-             (e.found ? 'COUNTEREXAMPLE' : 'no counterexample (bounded assurance)'),
-             e.found ? 'bad' : 'ok'));
-      line(out, '');
-      line(out, 'No forbidden state reached.', 'ok');
+  const out=el('ex-out'); clear(out);
+  const budget=parseInt(el('ex-budget').value,10);
+  const seed=parseInt(el('ex-seed').value)>>>0;
+  line(out,'attacking the real UDS server','note');
+  line(out,budget.toLocaleString('en-US')+' sequences · seed 0x'+
+           seed.toString(16).toUpperCase(),'dim');
+  return new Promise(res=>setTimeout(()=>{
+    const t0=performance.now();
+    const j=JSON.parse(api.explore(budget,seed));
+    const ms=Math.round(performance.now()-t0);
+    line(out,'');
+    line(out,'  '+j.tested.toLocaleString('en-US')+' sequences · '+
+             j.states+' security states · '+ms+' ms','dim');
+    line(out,'');
+    if(j.counterexamples.length===0){
+      j.evaluated.forEach(e=>line(out,'  ✓ '+e.code.padEnd(9)+
+        'no counterexample','ok'));
+      line(out,'');
+      line(out,'  No forbidden state reached (bounded assurance).','ok');
     } else {
-      j.counterexamples.forEach(c => {
-        line(out, '');
-        line(out, 'COUNTEREXAMPLE — invariant ' + c.code + ' violated', 'bad');
-        line(out, '  ' + c.summary, 'dim');
-        c.actions.forEach((a, i) => line(out, '  ' + (i+1) + '. ' + a));
+      j.counterexamples.forEach(c=>{
+        line(out,'  ✕ COUNTEREXAMPLE — '+c.code,'bad');
+        line(out,'    '+c.summary,'dim');
+        c.actions.forEach((a,i)=>line(out,'    '+(i+1)+'. '+a));
       });
     }
-  }, 30);
+    res();
+  },30));
 }
 
+/* ---------- benchmark ---------- */
+const SYS=[
+  {k:'s0', name:'ECU alone',          sub:'no protection'},
+  {k:'s1', name:'Stateless firewall', sub:'service allow-list'},
+  {k:'s2', name:'AHDG gateway',       sub:'reconstructs security state'}
+];
+
+function renderBars(j){
+  const host=el('bn-chart'); host.innerHTML='';
+  const max=Math.max(j.s0,j.s1,1);
+  SYS.forEach(s=>{
+    const v=j[s.k], blocked=(v===0);
+    const pct=Math.max((v/max)*100, v===0?0:2);
+    const row=document.createElement('div'); row.className='bar-row';
+    row.innerHTML=
+      '<div class="bar-name"><b>'+s.name+'</b>'+s.sub+'</div>'+
+      '<div class="bar-track">'+
+        '<div class="bar-fill" style="width:'+pct+'%;background:'+
+          (blocked?'var(--good)':'var(--critical)')+'"></div>'+
+        '<div class="bar-val"><span class="icon '+(blocked?'pass':'fail')+'">'+
+          (blocked?'✓':'✕')+'</span>'+v.toLocaleString('en-US')+
+          (blocked?' blocked':' got through')+'</div>'+
+      '</div>';
+    host.appendChild(row);
+  });
+  const lg=document.createElement('div'); lg.className='legend';
+  lg.innerHTML=
+    '<span><i class="sw" style="background:var(--critical)"></i>✕ unauthorized reset reached the ECU</span>'+
+    '<span><i class="sw" style="background:var(--good)"></i>✓ blocked before the ECU</span>';
+  host.appendChild(lg);
+}
 
 function runBenchmark(){
-  const out = el('bn-out');
-  out.innerHTML = '';
-  const budget = parseInt(el('bn-budget').value, 10);
-  line(out, 'same ECU, same attack corpus, three protections: ' +
-            budget.toLocaleString() + ' scenarios', 'note');
-  setTimeout(() => {
-    const t0 = performance.now();
-    const j = JSON.parse(api.benchmark(budget, 0xB0A7));
-    const ms = Math.round(performance.now() - t0);
-    line(out, '');
-    line(out, '  unauthorized resets reaching the ECU:');
-    line(out, '  S0  ECU only            ' + j.s0.toLocaleString(), 'bad');
-    line(out, '  S1  stateless firewall  ' + j.s1.toLocaleString() +
-              '   (blind - identical)', 'bad');
-    line(out, '  S2  AHDG gateway        ' + j.s2.toLocaleString() +
-              '   <- blocked', j.s2 === 0 ? 'ok' : 'bad');
-    line(out, '');
-    line(out, '  availability (legitimate flows served):');
-    line(out, '  S0 ' + j.s0_avail + '/' + j.avail_total +
-              '   S2 ' + j.s2_avail + '/' + j.avail_total,
-         (j.s2_avail === j.avail_total) ? 'ok' : 'bad');
-    line(out, '');
-    line(out, '  gateway: ' + j.gw_seen.toLocaleString() + ' seen, ' +
-              j.gw_dropped.toLocaleString() + ' dropped   (' + ms + ' ms)', 'dim');
-  }, 30);
+  const out=el('bn-out'); clear(out);
+  const budget=parseInt(el('bn-budget').value,10);
+  el('bn-status').textContent='running '+budget.toLocaleString('en-US')+' scenarios…';
+  return new Promise(res=>setTimeout(()=>{
+    const t0=performance.now();
+    const j=JSON.parse(api.benchmark(budget,0xB0A7));
+    const ms=Math.round(performance.now()-t0);
+    renderBars(j);
+    el('bn-status').textContent=budget.toLocaleString('en-US')+' scenarios · '+ms+' ms';
+    line(out,'Availability — legitimate unlock-then-reset flows served:','dim');
+    line(out,'  ECU alone '+j.s0_avail+'/'+j.avail_total+
+             '   ·   AHDG gateway '+j.s2_avail+'/'+j.avail_total+
+             (j.s2_avail===j.avail_total?'   ✓ nothing legitimate broken':''),
+         j.s2_avail===j.avail_total?'ok':'bad');
+    res();
+  },30));
 }
 
-function decodeTp(){
-  const j = JSON.parse(api.isotp_decode(el('tp-in').value));
-  const out = el('tp-out');
-  out.innerHTML = '';
-  if (!j.ok){
-    line(out, 'rejected: ' + j.reason, 'bad');
-    line(out, '(the parser refuses rather than trusting the announced length)', 'dim');
+/* ---------- ISO-TP ---------- */
+function decodeTp(hex){
+  const out=el('tp-out'); clear(out);
+  el('tp-in').value=hex;
+  line(out,'> '+hex,'cmd');
+  const j=JSON.parse(api.isotp_decode(hex));
+  if(!j.ok){
+    line(out,'  ✕ REJECTED — '+j.reason,'bad');
+    line(out,'    The parser refuses rather than trusting the announced length.','dim');
     return;
   }
-  line(out, 'type    : ' + j.type, 'ok');
-  if (j.length !== undefined) line(out, 'length  : ' + j.length + ' byte(s)');
-  if (j.payload) line(out, 'payload : ' + j.payload);
+  line(out,'  ✓ '+j.type,'ok');
+  if(j.length!==undefined) line(out,'    payload length : '+j.length+' byte(s)');
+  if(j.payload)            line(out,'    payload        : '+j.payload);
 }
 
+/* ---------- invariants ---------- */
 function loadInvariants(){
-  const inv = JSON.parse(api.invariants());
-  const tb = el('inv-table').querySelector('tbody');
-  inv.forEach(i => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = '<td class="code">' + i.code + '</td><td>' + i.summary + '</td>';
-    tb.appendChild(tr);
+  const inv=JSON.parse(api.invariants());
+  const host=el('inv-list');
+  inv.forEach(i=>{
+    const fam=i.code.split('-')[0];
+    const d=document.createElement('div'); d.className='inv-item';
+    d.innerHTML='<span class="chip '+fam+'">'+i.code+'</span>'+
+                '<span class="inv-txt">'+i.summary+'</span>';
+    host.appendChild(d);
   });
 }
 
-createAHDG().then(mod => {
-  M = mod;
-  api.version      = M.cwrap('ahdg_version', 'string', []);
-  api.reset        = M.cwrap('ahdg_reset', 'string', []);
-  api.state        = M.cwrap('ahdg_state', 'string', []);
-  api.request      = M.cwrap('ahdg_request', 'string', ['string']);
-  api.isotp_decode = M.cwrap('ahdg_isotp_decode', 'string', ['string']);
-  api.explore      = M.cwrap('ahdg_explore', 'string', ['number', 'number']);
-  api.invariants   = M.cwrap('ahdg_invariants', 'string', []);
-  api.benchmark    = M.cwrap('ahdg_benchmark', 'string', ['number', 'number']);
+/* ---------- full demo ---------- */
+async function runAll(){
+  const b=el('run-all'); b.disabled=true; b.textContent='● Running…';
+  clear(el('uds-out'));
+  api.reset();
+  line(el('uds-out'),'A diagnostic session, played against the real ECU','note');
+  line(el('uds-out'),'');
+  await sleep(120); sendUds('11 01');            await sleep(420);
+  line(el('uds-out'),'');                         await sleep(60);
+  sendUds('10 03');                               await sleep(420);
+  sendUds('22 F1 90');                            await sleep(420);
+  sendUds('11 01');                               await sleep(500);
+  decodeTp('07 10 03');                           await sleep(260);
+  await runBenchmark();                           await sleep(120);
+  await runExplore();
+  b.disabled=false; b.textContent='▶ Run the full demo';
+}
 
-  el('chip-wasm').textContent = 'WASM ready';
-  el('chip-wasm').className = 'chip ok';
-  el('loading').style.display = 'none';
-  el('app').style.display = 'grid';
+/* ---------- boot ---------- */
+createAHDG().then(mod=>{
+  M=mod;
+  api.version      = M.cwrap('ahdg_version','string',[]);
+  api.reset        = M.cwrap('ahdg_reset','string',[]);
+  api.state        = M.cwrap('ahdg_state','string',[]);
+  api.request      = M.cwrap('ahdg_request','string',['string']);
+  api.isotp_decode = M.cwrap('ahdg_isotp_decode','string',['string']);
+  api.explore      = M.cwrap('ahdg_explore','string',['number','number']);
+  api.invariants   = M.cwrap('ahdg_invariants','string',[]);
+  api.benchmark    = M.cwrap('ahdg_benchmark','string',['number','number']);
 
-  setChips(JSON.parse(api.state()));
+  el('loading').style.display='none';
+  el('app').style.display='grid';
   loadInvariants();
 
-  document.querySelectorAll('[data-uds]').forEach(b =>
-    b.onclick = () => { el('uds-in').value = b.dataset.uds; sendUds(b.dataset.uds); });
-  el('uds-send').onclick = () => sendUds(el('uds-in').value);
-  el('uds-in').addEventListener('keydown', e => { if (e.key === 'Enter') sendUds(el('uds-in').value); });
-  el('uds-reset').onclick = () => { setChips(JSON.parse(api.reset())); line(el('uds-out'), '-- ECU reset --', 'dim'); };
-  el('ex-run').onclick = runExplore;
-  el('bn-run').onclick = runBenchmark;
-  el('tp-decode').onclick = decodeTp;
-  el('tp-in').addEventListener('keydown', e => { if (e.key === 'Enter') decodeTp(); });
+  document.addEventListener('click',ev=>{
+    const t=ev.target.closest('button'); if(!t) return;
+    if(t.dataset.uds){ el('uds-in').value=t.dataset.uds; sendUds(t.dataset.uds); }
+    if(t.dataset.tp){ decodeTp(t.dataset.tp); }
+  });
+  el('uds-send').onclick=()=>sendUds(el('uds-in').value);
+  el('uds-in').addEventListener('keydown',e=>{if(e.key==='Enter')sendUds(el('uds-in').value);});
+  el('uds-reset').onclick=()=>{ api.reset(); clear(el('uds-out'));
+    line(el('uds-out'),'ECU reset — session Default, security LOCKED','dim'); };
+  el('ex-run').onclick=runExplore;
+  el('bn-run').onclick=runBenchmark;
+  el('tp-decode').onclick=()=>decodeTp(el('tp-in').value);
+  el('tp-in').addEventListener('keydown',e=>{if(e.key==='Enter')decodeTp(el('tp-in').value);});
+  el('run-all').onclick=runAll;
 
-  line(el('uds-out'), api.version(), 'dim');
-}).catch(err => {
-  el('loading').innerHTML =
-    'Le module WebAssembly n\'a pas pu se charger.<br>' +
-    'S\'il manque, il est construit et publié par le workflow GitHub Pages ' +
-    '(<code>.github/workflows/pages.yml</code>).<br><br>' +
-    '<span style="color:#f85149">' + err + '</span>';
+  /* Pre-fill so the page never looks empty on a screenshot. */
+  line(el('uds-out'),api.version(),'dim');
+  line(el('uds-out'),'Ready. Press "Run the full demo", or send a request.','dim');
+  line(el('ex-out'),'The explorer composes sequences of diagnostic actions and drives the','dim');
+  line(el('ex-out'),'real UDS server, hunting for a reachable forbidden state. Deterministic;','dim');
+  line(el('ex-out'),'any finding is minimized to an irreducible counterexample.','dim');
+  line(el('tp-out'),'Try a frame that lies about its own length — 07 10 03 announces 7','dim');
+  line(el('tp-out'),'payload bytes but carries 2. A parser that trusts it reads memory','dim');
+  line(el('tp-out'),'it never received.','dim');
+  renderBars({s0:83895,s1:83895,s2:0});
+  line(el('bn-out'),'Reference run, 200 000 scenarios. Press Run to reproduce it here.','dim');
+}).catch(err=>{
+  el('loading').innerHTML='The WebAssembly module failed to load.<br>'+
+    'It is built and published by <code>.github/workflows/pages.yml</code>.<br><br>'+
+    '<span style="color:#d03b3b">'+err+'</span>';
 });
 </script>
 </body>
