@@ -201,7 +201,7 @@ AHDG_EXPORT const char *ahdg_isotp_decode(const char *hex)
     if (n == 0u)
     {
         snprintf(g_json, sizeof(g_json),
-                 "{\"ok\":false,\"reason\":\"trame vide\"}");
+                 "{\"ok\":false,\"reason\":\"empty frame\"}");
         return g_json;
     }
 

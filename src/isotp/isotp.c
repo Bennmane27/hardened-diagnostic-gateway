@@ -49,18 +49,18 @@ const char *isotp_result_to_string(isotp_result_t result)
     switch (result)
     {
     case ISOTP_OK:                   return "OK";
-    case ISOTP_ERR_NULL_POINTER:     return "pointeur NULL";
-    case ISOTP_ERR_BUFFER_TOO_SMALL: return "tampon trop petit";
-    case ISOTP_ERR_INVALID_LENGTH:   return "longueur invalide";
-    case ISOTP_ERR_NOT_SINGLE_FRAME: return "type de trame inattendu";
-    case ISOTP_ERR_TRUNCATED_FRAME:  return "trame tronquee";
-    case ISOTP_ERR_UNEXPECTED_FRAME: return "trame inattendue dans cet etat";
-    case ISOTP_ERR_SEQUENCE_NUMBER:  return "numero de sequence incorrect";
-    case ISOTP_ERR_OVERFLOW:         return "message plus grand que le tampon";
-    case ISOTP_ERR_TIMEOUT:          return "delai expire";
-    case ISOTP_ERR_ABORTED:          return "transfert abandonne par le pair";
-    case ISOTP_ERR_BUSY:             return "transfert deja en cours";
-    default:                         return "erreur inconnue";
+    case ISOTP_ERR_NULL_POINTER:     return "null pointer";
+    case ISOTP_ERR_BUFFER_TOO_SMALL: return "buffer too small";
+    case ISOTP_ERR_INVALID_LENGTH:   return "invalid length";
+    case ISOTP_ERR_NOT_SINGLE_FRAME: return "unexpected frame type";
+    case ISOTP_ERR_TRUNCATED_FRAME:  return "truncated frame — it announces more payload than it carries";
+    case ISOTP_ERR_UNEXPECTED_FRAME: return "frame unexpected in this state";
+    case ISOTP_ERR_SEQUENCE_NUMBER:  return "wrong sequence number";
+    case ISOTP_ERR_OVERFLOW:         return "message larger than the reassembly buffer";
+    case ISOTP_ERR_TIMEOUT:          return "deadline expired";
+    case ISOTP_ERR_ABORTED:          return "transfer aborted by the peer";
+    case ISOTP_ERR_BUSY:             return "a transfer is already in progress";
+    default:                         return "unknown error";
     }
 }
 
@@ -72,7 +72,7 @@ const char *isotp_frame_type_to_string(isotp_frame_type_t type)
     case ISOTP_FRAME_FIRST:        return "First Frame";
     case ISOTP_FRAME_CONSECUTIVE:  return "Consecutive Frame";
     case ISOTP_FRAME_FLOW_CONTROL: return "Flow Control";
-    default:                       return "type inconnu";
+    default:                       return "unknown frame type";
     }
 }
 
