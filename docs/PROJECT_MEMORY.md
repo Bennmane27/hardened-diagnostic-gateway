@@ -382,6 +382,10 @@ turns "the parser looks safe" into a mechanically checked property.
 `type(scope): imperative summary`, body explaining **why**, not what.
 
 Types used: `feat`, `fix`, `refactor`, `test`, `docs`, `build`, `chore`.
+
+**No co-author trailer.** Commit messages carry no `Co-Authored-By:` line and no
+tooling attribution. The history was rewritten once to strip them; do not
+reintroduce one. The repository is presented as the author's own work.
 Scopes: `isotp`, `uds`, `ecu`, `tester`, `fuzz`, `ci`.
 
 Every commit must build and pass tests on its own (**I7**).
